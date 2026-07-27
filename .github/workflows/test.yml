@@ -29,8 +29,16 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install --upgrade pip pytest ruff
 
-      - name: Lint runtime and tests
-        run: ruff check scripts tests
+      - name: Lint hardened runtime and tests
+        run: >-
+          ruff check
+          scripts/tour_state.py
+          scripts/route_engine.py
+          scripts/event_engine.py
+          scripts/providers.py
+          scripts/tour_runtime.py
+          scripts/tourctl.py
+          tests
 
       - name: Run tests
         run: pytest
