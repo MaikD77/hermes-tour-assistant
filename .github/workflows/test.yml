@@ -29,8 +29,8 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install --upgrade pip pytest ruff
 
-      - name: Lint tests
-        run: ruff check tests
+      - name: Lint runtime and tests
+        run: ruff check scripts tests
 
       - name: Run tests
         run: pytest
