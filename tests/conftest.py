@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -15,8 +16,14 @@ def load_module(path: Path, module_name: str) -> ModuleType:
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Could not load module from {path}")
     module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.fixture
+def repository_root() -> Path:
+    return REPOSITORY_ROOT
 
 
 @pytest.fixture
@@ -27,6 +34,11 @@ def gate_module() -> ModuleType:
 @pytest.fixture
 def tour_state_module() -> ModuleType:
     return load_module(REPOSITORY_ROOT / "scripts" / "tour_state.py", "tour_state")
+
+
+@pytest.fixture
+def route_engine_module() -> ModuleType:
+    return load_module(REPOSITORY_ROOT / "scripts" / "route_engine.py", "route_engine")
 
 
 @pytest.fixture
