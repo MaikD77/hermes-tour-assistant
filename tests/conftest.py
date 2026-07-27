@@ -52,5 +52,15 @@ def providers_module() -> ModuleType:
 
 
 @pytest.fixture
+def tour_runtime_module() -> ModuleType:
+    return load_module(REPOSITORY_ROOT / "scripts" / "tour_runtime.py", "tour_runtime")
+
+
+@pytest.fixture
+def tourctl_module() -> ModuleType:
+    return load_module(REPOSITORY_ROOT / "scripts" / "tourctl.py", "tourctl")
+
+
+@pytest.fixture
 def simple_gpx() -> Path:
     return REPOSITORY_ROOT / "tests" / "fixtures" / "simple-route.gpx"
