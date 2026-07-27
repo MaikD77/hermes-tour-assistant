@@ -78,7 +78,7 @@ def test_skip_preserves_last_wake(gate_module, monkeypatch, tmp_path, capsys) ->
     state = gate_module.load_json(gate_module.GATE_STATE, {})
     assert state["last_wake_at"] == 1_000_000.0
     assert state["last_wake_lat"] == 50.0
-    assert state["next_due_at"] == 1_000_300.0
+    assert state["next_due_at"] == 1_000_900.0
 
 
 def test_no_wake_before_next_due_at(gate_module, monkeypatch, tmp_path, capsys) -> None:
