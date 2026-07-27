@@ -42,5 +42,10 @@ def route_engine_module() -> ModuleType:
 
 
 @pytest.fixture
+def event_engine_module() -> ModuleType:
+    return load_module(REPOSITORY_ROOT / "scripts" / "event_engine.py", "event_engine")
+
+
+@pytest.fixture
 def simple_gpx() -> Path:
     return REPOSITORY_ROOT / "tests" / "fixtures" / "simple-route.gpx"
