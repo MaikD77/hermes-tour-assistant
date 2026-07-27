@@ -25,5 +25,10 @@ def gate_module() -> ModuleType:
 
 
 @pytest.fixture
+def tour_state_module() -> ModuleType:
+    return load_module(REPOSITORY_ROOT / "scripts" / "tour_state.py", "tour_state")
+
+
+@pytest.fixture
 def simple_gpx() -> Path:
     return REPOSITORY_ROOT / "tests" / "fixtures" / "simple-route.gpx"
