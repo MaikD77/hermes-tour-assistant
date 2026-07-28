@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 EARTH_RADIUS_M = 6_371_008.8
+MAX_GPX_BYTES = 20 * 1024 * 1024
+MAX_ROUTE_POINTS = 200_000
 
 
 @dataclass(frozen=True)
@@ -27,6 +29,7 @@ class RouteMatch:
     remaining_m: float
     direction: str
     confidence: float
+    ambiguous: bool = False
 
 
 def haversine_m(a_lat: float, a_lon: float, b_lat: float, b_lon: float) -> float:
@@ -38,6 +41,8 @@ def haversine_m(a_lat: float, a_lon: float, b_lat: float, b_lon: float) -> float
 
 
 def parse_gpx(path: Path) -> list[RoutePoint]:
+    if path.stat().st_size > MAX_GPX_BYTES:
+        raise ValueError("GPX file exceeds the 20 MiB safety limit")
     root = ET.parse(path).getroot()
     raw: list[tuple[float, float]] = []
     for element in root.iter():
@@ -46,7 +51,17 @@ def parse_gpx(path: Path) -> list[RoutePoint]:
             continue
         if "lat" not in element.attrib or "lon" not in element.attrib:
             continue
-        raw.append((float(element.attrib["lat"]), float(element.attrib["lon"])))
+        lat = float(element.attrib["lat"])
+        lon = float(element.attrib["lon"])
+        if not math.isfinite(lat) or not -90 <= lat <= 90:
+            raise ValueError("GPX contains an invalid latitude")
+        if not math.isfinite(lon) or not -180 <= lon <= 180:
+            raise ValueError("GPX contains an invalid longitude")
+        point = (lat, lon)
+        if not raw or raw[-1] != point:
+            raw.append(point)
+        if len(raw) > MAX_ROUTE_POINTS:
+            raise ValueError("GPX contains too many route points")
     if len(raw) < 2:
         raise ValueError("GPX route requires at least two points")
 
@@ -99,6 +114,12 @@ def match_position(
 ) -> RouteMatch:
     if len(route) < 2:
         raise ValueError("route requires at least two points")
+    if not math.isfinite(lat) or not -90 <= lat <= 90:
+        raise ValueError("invalid latitude")
+    if not math.isfinite(lon) or not -180 <= lon <= 180:
+        raise ValueError("invalid longitude")
+    if search_window < 1:
+        raise ValueError("search_window must be positive")
 
     start_index = 0
     end_index = len(route) - 1
@@ -106,22 +127,35 @@ def match_position(
         start_index = max(0, previous_segment_index - search_window)
         end_index = min(len(route) - 1, previous_segment_index + search_window + 1)
 
-    best: tuple[float, int, float] | None = None
+    candidates: list[tuple[float, int, float, float]] = []
     for index in range(start_index, end_index):
         fraction, offset = _project_to_segment(lat, lon, route[index], route[index + 1])
-        candidate = (offset, index, fraction)
-        if best is None or candidate < best:
-            best = candidate
-    if best is None:
+        segment_length = route[index + 1].cumulative_m - route[index].cumulative_m
+        progress = route[index].cumulative_m + fraction * segment_length
+        continuity_penalty = 0.0
+        if previous_progress_m is not None:
+            continuity_penalty = min(abs(progress - previous_progress_m) * 0.02, 75.0)
+        candidates.append((offset + continuity_penalty, index, fraction, offset))
+    if not candidates:
         raise ValueError("no route segment available")
 
-    offset, index, fraction = best
+    candidates.sort()
+    _, index, fraction, offset = candidates[0]
     segment_length = route[index + 1].cumulative_m - route[index].cumulative_m
     progress = route[index].cumulative_m + fraction * segment_length
     total = route[-1].cumulative_m
+    ambiguous = False
+    for _, other_index, other_fraction, other_offset in candidates[1:]:
+        other_length = (
+            route[other_index + 1].cumulative_m - route[other_index].cumulative_m
+        )
+        other_progress = route[other_index].cumulative_m + other_fraction * other_length
+        if other_offset <= offset + 15 and abs(other_progress - progress) >= 100:
+            ambiguous = True
+            break
 
     direction = "unknown"
-    if previous_progress_m is not None:
+    if previous_progress_m is not None and not ambiguous:
         delta = progress - previous_progress_m
         if delta > 10:
             direction = "forward"
@@ -129,6 +163,8 @@ def match_position(
             direction = "reverse"
 
     confidence = max(0.0, min(1.0, 1.0 - offset / 250.0))
+    if ambiguous:
+        confidence = min(confidence, 0.49)
     return RouteMatch(
         segment_index=index,
         fraction=round(fraction, 6),
@@ -137,4 +173,5 @@ def match_position(
         remaining_m=round(max(0.0, total - progress), 1),
         direction=direction,
         confidence=round(confidence, 3),
+        ambiguous=ambiguous,
     )

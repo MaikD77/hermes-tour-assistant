@@ -6,11 +6,29 @@ def test_safety_events_precede_comfort_events(event_engine_module) -> None:
     events = {}
     event_engine_module.upsert_event(
         events,
-        event("poi:1", "poi", "info", 0.9, 1.0, 1.0, route_distance_ahead_m=500),
+        event(
+            "poi:1",
+            "poi",
+            "info",
+            0.9,
+            1.0,
+            1.0,
+            route_distance_ahead_m=500,
+            evidence=[{"source": "osm"}],
+        ),
     )
     event_engine_module.upsert_event(
         events,
-        event("safety:1", "safety", "critical", 0.8, 1.0, 1.0, route_distance_ahead_m=2_000),
+        event(
+            "safety:1",
+            "safety",
+            "critical",
+            0.8,
+            1.0,
+            1.0,
+            route_distance_ahead_m=2_000,
+            evidence=[{"source": "verified-geometry"}],
+        ),
     )
 
     selected = event_engine_module.select_for_delivery(events, 2.0)
@@ -48,6 +66,7 @@ def test_only_verified_places_create_settlement_events(event_engine_module) -> N
             "verified_place": True,
             "distance_ahead_m": 2_000,
             "confidence": 0.9,
+            "source": "osm",
         },
         {
             "id": 2,
@@ -61,3 +80,33 @@ def test_only_verified_places_create_settlement_events(event_engine_module) -> N
 
     assert len(events) == 1
     assert events[0].payload == {"name": "Verified Village"}
+
+
+def test_external_event_without_evidence_is_not_delivered(event_engine_module) -> None:
+    event = event_engine_module.TourEvent
+    events = {}
+    event_engine_module.upsert_event(
+        events,
+        event("poi:1", "poi", "info", 0.9, 1.0, 1.0),
+    )
+
+    assert event_engine_module.select_for_delivery(events, 2.0) == []
+
+
+def test_event_refresh_preserves_delivery_state_and_can_resolve(
+    event_engine_module,
+) -> None:
+    event = event_engine_module.TourEvent
+    events = {}
+    original = event("off:1", "off_route", "warning", 1.0, 1.0, 1.0)
+    event_engine_module.upsert_event(events, original)
+    event_engine_module.mark_delivered(events, [events["off:1"]], 2.0)
+    refreshed = event("off:1", "off_route", "warning", 1.0, 3.0, 3.0)
+
+    event_engine_module.upsert_event(events, refreshed)
+    event_engine_module.resolve_event(events, "off:1", 4.0)
+
+    assert events["off:1"]["first_detected_at"] == 1.0
+    assert events["off:1"]["last_sent_at"] == 2.0
+    assert events["off:1"]["status"] == "resolved"
+    assert event_engine_module.severity_score("unknown") == 0

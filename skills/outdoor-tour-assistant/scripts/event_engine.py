@@ -14,6 +14,13 @@ PRIORITY = {
     "settlement_approach": 4,
     "poi": 5,
 }
+EVIDENCE_REQUIRED = {
+    "safety",
+    "weather_warning",
+    "supply_gap",
+    "settlement_approach",
+    "poi",
+}
 
 
 @dataclass
@@ -31,6 +38,7 @@ class TourEvent:
     route_distance_ahead_m: float | None = None
     route_offset_m: float | None = None
     payload: dict[str, Any] | None = None
+    evidence: list[dict[str, Any]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -67,6 +75,10 @@ def eligible_events(events: dict[str, dict[str, Any]], now: float) -> list[dict[
         if event.get("status") == "active"
         and float(event.get("cooldown_until", 0) or 0) <= now
         and float(event.get("confidence", 0) or 0) >= 0.5
+        and (
+            event.get("event_type") not in EVIDENCE_REQUIRED
+            or bool(event.get("evidence"))
+        )
     ]
 
 
@@ -138,6 +150,9 @@ def settlement_events(
         if not verified or not 0 < distance <= max_distance_ahead_m:
             continue
         place_id = str(settlement.get("id") or settlement.get("name"))
+        source = str(settlement.get("source") or "").strip()
+        if not source:
+            continue
         result.append(
             TourEvent(
                 event_id=f"settlement:{place_id}",
@@ -149,6 +164,13 @@ def settlement_events(
                 route_distance_ahead_m=distance,
                 route_offset_m=settlement.get("route_offset_m"),
                 payload={"name": settlement.get("name")},
+                evidence=[
+                    {
+                        "source": source,
+                        "kind": "verified_place",
+                        "observed_at": settlement.get("observed_at", now),
+                    }
+                ],
             )
         )
     return result

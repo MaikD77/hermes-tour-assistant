@@ -63,3 +63,19 @@ def test_search_window_prefers_previous_route_area(route_engine_module) -> None:
 
     assert match.segment_index == 2
     assert match.direction == "forward"
+
+
+def test_crossing_without_continuity_is_marked_ambiguous(route_engine_module) -> None:
+    point = route_engine_module.RoutePoint
+    route = [
+        point(50.0, 10.0, 0.0),
+        point(50.01, 10.01, 1_320.0),
+        point(50.01, 10.0, 2_034.0),
+        point(50.0, 10.01, 3_354.0),
+    ]
+
+    match = route_engine_module.match_position(50.005, 10.005, route)
+
+    assert match.ambiguous is True
+    assert match.direction == "unknown"
+    assert match.confidence < 0.5
