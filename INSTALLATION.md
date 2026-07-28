@@ -1,45 +1,59 @@
-# Installation and Operations
+# Installation und Betrieb
 
-## Requirements
+## Voraussetzungen
 
-- Hermes Agent with Telegram live-location cache support
-- Python 3.11 or newer
-- terminal and web toolsets
-- optional Komoot and maps integrations
+- Hermes Agent unter Linux oder macOS;
+- Python 3.11 oder neuer;
+- Telegram-Adapter mit Cache für bearbeitete Live-Standorte;
+- Hermes-Toolsets `terminal` und `web`;
+- optional Komoot- und Kartenfähigkeiten des jeweiligen Deployments.
 
-## Install skills
+## Skills installieren
 
-Copy the two skill directories into the Hermes skill root:
+Die Runtime ist Bestandteil des kanonischen Skills. Es werden keine separaten
+Root-Skripte kopiert:
 
 ```bash
 cp -R skills/outdoor-tour-assistant ~/.hermes/skills/
 cp -R skills/live-location-nearby ~/.hermes/skills/
 ```
 
-Copy runtime scripts into one private directory:
+Bei einem Update müssen beide Zielverzeichnisse vollständig durch die neue
+Version ersetzt oder über den Hermes-Skill-Installer aktualisiert werden.
+
+## Service-Umgebung
 
 ```bash
-install -d -m 700 ~/.hermes/scripts/tour-assistant
-install -m 700 scripts/*.py ~/.hermes/scripts/tour-assistant/
+export HERMES_TOUR_CHAT_ID="DEINE_TELEGRAM_CHAT_ID"
+export HERMES_TOUR_ACTIVITY="cycling"  # cycling oder walking
+export HERMES_TOUR_LOCALE="de-DE"
+export HERMES_TOUR_LOCATION_MAX_AGE_SECONDS="300"
 ```
 
-Set the Telegram chat ID through the service environment:
+Optional kann `HERMES_TOUR_STATE_DIR` den privaten State-Pfad überschreiben.
+`HERMES_TOUR_ROUTE_DIR` aktiviert die lokale `route.planned`-Fähigkeit für
+zuvor exportierte GPX-Dateien. Die produktiven strukturierten Fähigkeiten
+`weather.current`, `map.reverse`, `map.corridor` und `water.search` werden über
+die Registry bereitgestellt.
+Identifikatoren und Zugangsdaten dürfen nicht in Repository- oder Skill-Dateien
+eingetragen werden.
 
-```bash
-export HERMES_TOUR_CHAT_ID="YOUR_TELEGRAM_CHAT_ID"
-```
+Bei Bedarf lassen sich die profilspezifischen Distanzen über
+`HERMES_TOUR_MOVE_THRESHOLD_M`, `HERMES_TOUR_OFF_ROUTE_ENTER_M`,
+`HERMES_TOUR_OFF_ROUTE_EXIT_M`, `HERMES_TOUR_SETTLEMENT_APPROACH_M` und
+`HERMES_TOUR_FINISH_APPROACH_M` anpassen. Werte müssen positiv sein; die
+Off-Route-Austrittsschwelle muss unter der Eintrittsschwelle liegen.
 
-Do not hard-code identifiers or credentials in repository files.
+## Cron-Konfiguration
 
-## Cron configuration
-
-The gate must run every minute. The internal gate selects the effective 2, 3, 5, or 15 minute wake cadence.
+Der Grundtakt muss eine Minute betragen. Die Gate Policy wählt intern die
+effektive 2-, 3-, 5- oder 15-Minuten-Cadence.
 
 ```yaml
 job_id: tour-assistant
 name: Live Tour Assistant
 schedule: every 1m
-script: /home/USER/.hermes/scripts/tour-assistant/live_tour_gate.py
+script: /home/USER/.hermes/skills/outdoor-tour-assistant/scripts/live_tour_gate.py
 workdir: /home/USER
 skills:
   - outdoor-tour-assistant
@@ -47,48 +61,78 @@ skills:
   - maps
   - komoot
 deliver: origin
+prompt: |
+  Use the loaded outdoor-tour-assistant skill and the pre-run gate context.
+  Return exactly [SILENT] when no evidenced event is selected.
 ```
 
-A five-minute cron interval cannot provide the documented two- or three-minute cadence.
+Die vollständige Minimalaufgabe liegt unter
+`references/cron-prompt.md` im installierten Skill.
 
-## Initial hardening
+## Erstprüfung
 
 ```bash
-python3 ~/.hermes/scripts/tour-assistant/tourctl.py harden-permissions
-python3 ~/.hermes/scripts/tour-assistant/tourctl.py diagnose
+python3 ~/.hermes/skills/outdoor-tour-assistant/scripts/tourctl.py \
+  harden-permissions
+python3 ~/.hermes/skills/outdoor-tour-assistant/scripts/tourctl.py \
+  diagnose
+python3 ~/.hermes/skills/outdoor-tour-assistant/scripts/tourctl.py \
+  capabilities
 ```
 
-## Retention
+`diagnose` gibt keine Standortinhalte aus.
 
-Remove expired GPX, temporary, and backup files regularly:
+## Route optional vorbereiten
+
+Nur eine erfolgreich geparste GPX-Datei darf als verifiziert gespeichert werden:
 
 ```bash
-python3 ~/.hermes/scripts/tour-assistant/tourctl.py cleanup --older-than-hours 48
+python3 ~/.hermes/skills/outdoor-tour-assistant/scripts/prepare_tour.py 123456 \
+  --tour-name "Meine Tour" \
+  --provider komoot \
+  --gpx-file /privater/pfad/tour.gpx
 ```
 
-## Verification
+Die Runtime kopiert die Datei mit Modus `0600` in den State-Ordner. Ohne
+`--gpx-file` bleibt die Route im Status `matching` und wird nicht als
+verifiziert behandelt.
 
-Repository checks:
+## Wichtige Betriebskommandos
 
 ```bash
-python3 -m pip install pytest ruff
-ruff check scripts tests
-pytest
+# Sanitierter Kontext
+python3 ~/.hermes/skills/outdoor-tour-assistant/scripts/tourctl.py context
+
+# Präzise Position nur unmittelbar für einen Provideraufruf
+python3 ~/.hermes/skills/outdoor-tour-assistant/scripts/tourctl.py \
+  context --include-location
+
+# Strukturierte aktuelle Wetterdaten
+python3 ~/.hermes/skills/outdoor-tour-assistant/scripts/tourctl.py weather-current
+
+# Abgelaufene GPX-, Temp-, Backup- und Quarantänedateien entfernen
+python3 ~/.hermes/skills/outdoor-tour-assistant/scripts/tourctl.py \
+  cleanup --older-than-hours 48
 ```
 
-Operational checks:
+Eine aktuell referenzierte GPX-Datei wird von `cleanup` nicht gelöscht.
 
-1. Start live-location share A and attach route A.
-2. End share A.
-3. Start share B.
-4. Verify that route, progress, weather, and event data from A are absent.
-5. Replay positions around a route crossing and confirm stable segment continuity.
-6. Simulate a provider outage and confirm degraded health without unsupported alerts.
+## Upgrade von 1.1 oder 1.2
+
+1. Cronjob pausieren.
+2. Beide Skill-Verzeichnisse aktualisieren.
+3. `harden-permissions` und `diagnose` ausführen.
+4. Gate einmal manuell ausführen.
+5. Prüfen, dass `schema_version` den Wert `3` hat.
+6. Cronjob im Shadow Mode reaktivieren.
+
+Legacy-State wird migriert. Ungültiger State wird nicht überschrieben, sondern
+privat quarantänisiert und einmalig als Betriebsfehler gemeldet.
 
 ## Rollout
 
-Use three stages:
-
-1. Replay mode with stored location points and no delivery.
-2. Shadow mode on a real tour with local decisions only.
-3. Canary delivery limited initially to startup, clear off-route events, and severe warnings.
+1. **Replay:** gespeicherte, anonymisierte Standortpunkte; keine Auslieferung.
+2. **Shadow:** reale Tour, Entscheidungen nur lokal protokollieren.
+3. **Canary:** nur Start, eindeutiges Off-Route und schwere Warnungen.
+4. **Normalbetrieb:** POI- und Versorgungshinweise erst nach erfolgreicher
+   Canary-Tour aktivieren.

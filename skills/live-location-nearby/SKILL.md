@@ -1,7 +1,7 @@
 ---
 name: live-location-nearby
 description: "Use the newest Telegram live-location coordinate for compact nearby water, food, repair, shelter, and supply results."
-version: 1.2.0
+version: 1.3.0
 author: MaikD77
 license: MIT
 platforms: [linux, macos]
@@ -49,7 +49,7 @@ Do not use for route-wide waypoint planning; use the outdoor tour or maps workfl
 Use the bundled script through a path resolved from the installed skill directory, not from the cron working directory:
 
 ```bash
-python3 ~/.hermes/skills/live-location-nearby/scripts/find_water.py LAT LON --radius 5000 --limit 8
+python3 ${HERMES_SKILL_DIR}/scripts/find_water.py LAT LON --radius 5000 --limit 8
 ```
 
 The script queries OpenStreetMap/Overpass and ranks:

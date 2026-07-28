@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import sys
 import urllib.parse
 import urllib.request
@@ -15,6 +16,8 @@ MIRRORS = (
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
 )
+MAX_RESPONSE_BYTES = 5_000_000
+CONTROL_CHARACTERS = re.compile(r"[\x00-\x1f\x7f]")
 
 
 def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -45,13 +48,16 @@ out center tags;"""
             req = urllib.request.Request(
                 endpoint,
                 data=body,
-                headers={"User-Agent": "Hermes-live-location-nearby/1.0"},
+                headers={"User-Agent": "Hermes-live-location-nearby/1.3"},
             )
-            with urllib.request.urlopen(req, timeout=35) as response:
-                return json.load(response)
+            with urllib.request.urlopen(req, timeout=20) as response:
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(raw) > MAX_RESPONSE_BYTES:
+                raise ValueError("response_too_large")
+            return json.loads(raw)
         except Exception as exc:
-            errors.append(f"{endpoint}: {exc}")
-    raise RuntimeError("; ".join(errors))
+            errors.append(type(exc).__name__)
+    raise RuntimeError("overpass_unavailable:" + ",".join(errors))
 
 
 def coords(element: dict[str, Any]) -> tuple[float, float] | None:
@@ -83,7 +89,8 @@ def classify(tags: dict[str, Any]) -> tuple[int, str, str]:
 
 def format_name(tags: dict[str, Any], status: str) -> str:
     if tags.get("name"):
-        return str(tags["name"])
+        value = CONTROL_CHARACTERS.sub("", str(tags["name"]))
+        return " ".join(value.split())[:160]
     if status == "confirmed":
         return "Öffentliche Trinkwasserstelle"
     if tags.get("amenity") == "fountain":
@@ -106,11 +113,24 @@ def main() -> int:
     parser.add_argument("--radius", type=int, default=5000)
     parser.add_argument("--limit", type=int, default=8)
     args = parser.parse_args()
+    if not math.isfinite(args.lat) or not -90 <= args.lat <= 90:
+        parser.error("lat must be between -90 and 90")
+    if not math.isfinite(args.lon) or not -180 <= args.lon <= 180:
+        parser.error("lon must be between -180 and 180")
+    if not 100 <= args.radius <= 25_000:
+        parser.error("radius must be between 100 and 25000")
+    if not 1 <= args.limit <= 50:
+        parser.error("limit must be between 1 and 50")
 
     try:
         data = overpass_query(args.lat, args.lon, args.radius)
-    except Exception as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+    except Exception:
+        print(
+            json.dumps(
+                {"ok": False, "error_code": "overpass_unavailable"},
+                ensure_ascii=False,
+            )
+        )
         return 2
 
     results: list[dict[str, Any]] = []
@@ -141,8 +161,17 @@ def main() -> int:
             "opening_hours": tags.get("opening_hours"),
             "brand": tags.get("brand"),
             "osm_tags": {k: tags[k] for k in ("amenity", "shop", "drinking_water", "potable", "man_made") if k in tags},
-            "maps_url": "https://www.google.com/maps/search/?api=1&query=" + destination,
-            "directions_url": "https://www.google.com/maps/dir/?api=1&origin=" + origin + "&destination=" + destination + "&travelmode=bicycling",
+            "maps_url": "https://www.google.com/maps/search/?"
+            + urllib.parse.urlencode({"api": "1", "query": destination}),
+            "directions_url": "https://www.google.com/maps/dir/?"
+            + urllib.parse.urlencode(
+                {
+                    "api": "1",
+                    "origin": origin,
+                    "destination": destination,
+                    "travelmode": "bicycling",
+                }
+            ),
             "_rank": rank,
         })
 

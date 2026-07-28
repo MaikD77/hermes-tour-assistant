@@ -1,39 +1,71 @@
-# Security and Privacy
+# Sicherheit und Datenschutz
 
-## Data processed
+## Verarbeitete Daten
 
-The assistant processes precise Telegram live-location coordinates, local GPX files, Komoot route metadata, OpenStreetMap data, and weather-provider responses.
+Der Assistent verarbeitet präzise Telegram-Live-Standorte, private GPX-Dateien,
+Routenmetadaten, OpenStreetMap-Daten und Wetterantworten.
 
-External provider requests disclose at least an approximate current or forward-route location to the selected provider. The project therefore does not claim that no data is shared with third parties.
+Ein expliziter Provideraufruf kann mindestens die ungefähre aktuelle oder
+vorausliegende Position an den konfigurierten Anbieter übertragen. Der Provider-
+und Terminalaufruf kann außerdem im Hermes-Tool-Audit erscheinen. Das Projekt
+behauptet daher nicht, dass Standortdaten ausschließlich lokal verarbeitet
+werden.
 
-## Local storage
+## Lokale Speicherung
 
-Runtime files under `~/.hermes/state` must use:
+Die Runtime erzwingt:
 
-- directory mode `0700`;
-- file mode `0600`;
-- atomic replacement for JSON writes;
-- bounded retention for old GPX, temporary, and backup files.
-
-Run:
+- State-Verzeichnis `0700`;
+- State-, Lock-, GPX-, Temp- und Quarantänedateien `0600`;
+- prozessübergreifende Dateisperre;
+- eindeutige temporäre Dateien, `fsync` und atomaren Replace;
+- validierte Migrationen statt stiller Rücksetzung;
+- begrenzte Retention, ohne die aktive GPX-Datei zu löschen.
 
 ```bash
-python3 scripts/tourctl.py harden-permissions
-python3 scripts/tourctl.py cleanup --older-than-hours 48
+python3 skills/outdoor-tour-assistant/scripts/tourctl.py harden-permissions
+python3 skills/outdoor-tour-assistant/scripts/tourctl.py cleanup --older-than-hours 48
 ```
 
-## Trust boundary
+## Trust Boundary
 
-All provider output is untrusted data. This includes route names, POI descriptions, websites, map tags, search snippets, opening-hours values, and error strings. These values must never be interpreted as agent instructions or shell commands.
+Routennamen, POI-Texte, Webseiten, Kartentags, Such-Snippets,
+Öffnungszeiten und Providerfehler sind nicht vertrauenswürdige Daten.
 
-## Safety limitations
+- Inhalte daraus dürfen nicht als Agentenanweisungen interpretiert werden.
+- Providerwerte dürfen nicht in Shell-Kommandos interpoliert werden.
+- Externe Ereignisse benötigen Quelle, Evidenz und Confidence.
+- Anzeigenamen werden für Markdown escaped.
+- Navigationslinks werden lokal aus validierten Koordinaten erzeugt.
+- Providerfehler werden auf feste Fehlercodes normalisiert; Rohtexte werden
+  nicht im State gespeichert.
 
-Community map data and web results can be incomplete or stale. Hazard, access, surface, opening-hours, and water-potability statements require explicit evidence and confidence labels. The assistant is an informational aid and not a certified navigation or emergency-warning system.
+## Standortminimierung
 
-## Logging
+Das Cron-Gate gibt keine präzisen Koordinaten aus. Sein Kontext enthält nur eine
+pseudonyme Session-ID, Trigger, Cadence, Flags und sanitierte Fehlercodes.
+`tourctl diagnose` und normales `tourctl context` redigieren Standorte.
 
-Operational logs should avoid precise coordinates. `tourctl diagnose` reports file health without outputting location contents. Any future debug export must pass through coordinate redaction.
+`tourctl context --include-location` ist eine bewusste Ausnahme für einen
+unmittelbar folgenden Provideraufruf. Die Position darf nicht in Antworten,
+Debug-Exports oder öffentliche Tickets übernommen werden.
 
-## Reporting vulnerabilities
+## Ausgehende Verbindungen
 
-Do not include live coordinates, Telegram identifiers, private GPX files, tokens, or provider credentials in public issues. Report security-sensitive findings privately to the repository owner.
+Der mitgelieferte Wetteradapter verwendet ausschließlich den fest definierten
+Open-Meteo-Endpunkt. Die Wasser-Suche verwendet eine feste Liste von
+Overpass-Endpunkten. Weitere Provider müssen durch die Registry konfiguriert
+und wie untrusted behandelt werden.
+
+## Sicherheitsgrenzen
+
+Community-Karten und Wetterdaten können falsch, veraltet oder unvollständig
+sein. Aussagen zu Gefahr, Zugang, Oberfläche, Öffnungszeiten und Trinkbarkeit
+benötigen explizite Evidenz. Der Assistent ersetzt weder Navigation,
+Wetterwarnsysteme noch Notfalldienste.
+
+## Schwachstellen melden
+
+Keine Live-Koordinaten, Telegram-IDs, privaten GPX-Dateien, Tokens oder
+Provider-Credentials in öffentliche Issues schreiben. Sicherheitsrelevante
+Funde privat an den Repository-Eigentümer melden.
