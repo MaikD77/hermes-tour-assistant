@@ -11,6 +11,12 @@ def configure_paths(gate_module, monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(gate_module, "MAX_LOCATION_AGE_SECONDS", 300.0)
 
 
+def set_non_lunch_local_time(gate_module, monkeypatch) -> None:
+    runtime_time = gate_module.TourRuntime.evaluate_gate.__globals__["time"]
+    six_am = runtime_time.struct_time((2024, 1, 1, 6, 0, 0, 0, 1, -1))
+    monkeypatch.setattr(runtime_time, "localtime", lambda _: six_am)
+
+
 def write_snapshot(
     gate_module,
     *,
@@ -71,6 +77,7 @@ def test_skip_preserves_last_wake(
     gate_module, monkeypatch, tmp_path, capsys
 ) -> None:
     configure_paths(gate_module, monkeypatch, tmp_path)
+    set_non_lunch_local_time(gate_module, monkeypatch)
     write_snapshot(gate_module, updated_at=999_999.0, expires_at=1_003_600.0)
     gate_module.main(now=1_000_000.0)
     read_output(capsys)
@@ -87,6 +94,7 @@ def test_skip_preserves_last_wake(
 
 def test_wakes_when_due(gate_module, monkeypatch, tmp_path, capsys) -> None:
     configure_paths(gate_module, monkeypatch, tmp_path)
+    set_non_lunch_local_time(gate_module, monkeypatch)
     write_snapshot(gate_module, updated_at=999_999.0, expires_at=1_003_600.0)
     gate_module.main(now=1_000_000.0)
     read_output(capsys)
@@ -188,6 +196,7 @@ def test_only_verified_settlement_triggers_town_approach(
     capsys,
 ) -> None:
     configure_paths(gate_module, monkeypatch, tmp_path)
+    set_non_lunch_local_time(gate_module, monkeypatch)
     monkeypatch.setitem(
         gate_module.TourRuntime.evaluate_gate.__globals__,
         "FINISH_APPROACH_M",
