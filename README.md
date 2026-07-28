@@ -1,5 +1,12 @@
 # Hermes Tour Assistant 🚴🚶
 
+**Bau dir deinen persönlichen Tour-Begleiter für Hermes Agent.** Egal ob Radtour, Wanderung oder Stadtbummel — der Assistent überwacht deine Live-Standort, warnt vor Routenabweichungen, findet Wasser- und Versorgungspunkte, checkt das Wetter und erzählt dir an Stationen spannende Geschichten. Und das alles leise: Nur wenn wirklich was los ist, meldet er sich.
+
+- 🚴 **Outdoor Tour Assistant** — GPX-Routenüberwachung mit Echtzeit-Warnungen
+- 🏙️ **City Walk Guide** — persönlicher, quellengestützter Stadtrundgang per Telegram
+- 💧 **Live Location Nearby** — findet Wasser, Essen, Reparatur, Unterkunft
+- 🤫 **Silent by default** — kein Rauschen, nur Signale
+
 Private, standortbewusste Outdoor- und Stadtführungs-Skills für
 [Hermes Agent](https://hermes-agent.nousresearch.com). Der Outdoor-Assistent
 überwacht GPX-Touren leise und ereignisbasiert. Der City Walk Guide plant einen
@@ -144,6 +151,15 @@ cp -R skills/location-session-core ~/.hermes/skills/
 cp -R skills/city-walk-guide ~/.hermes/skills/
 ```
 
+## Beispiele — was du damit machen kannst
+
+| Skill | Beispiel-Prompt | Ergebnis |
+|-------|----------------|----------|
+| 🚴 Outdoor | „Ich starte meine Spessart-Tour, überwache mich." | Routen-Matching, Live-Tracking, Wetter + Warnungen |
+| 🏙️ City Walk | „Gib mir einen 90-minütigen Stadtrundgang durch Erfurt." | Quellengestützter Rundgang mit Geschichten pro Station |
+| 💧 Nearby | „Wo gibt's hier Trinkwasser?" | Nächste Brunnen/Tanks/Raststätten via OSM |
+| 🛑 Sicherheit | „Bin ich noch auf der Route?" | Routenabweichung + Off-Route-Alarm |
+
 Die Hermes-Service-Umgebung benötigt mindestens:
 
 ```bash
@@ -203,3 +219,7 @@ nach 24 Stunden bereinigt. Ein
 expliziter Provideraufruf kann die aktuelle oder vorausliegende Position an den
 konfigurierten Anbieter übertragen und erscheint gegebenenfalls im
 Hermes-Tool-Audit. Details und Grenzen stehen in [SECURITY.md](SECURITY.md).
+
+---
+
+> **GitHub Topics (empfohlen):** `hermes-agent`, `hermes-skill`, `outdoor`, `cycling`, `city-walk`, `gpx`, `telegram-bot`, `live-location`, `openstreetmap`, `osm`
