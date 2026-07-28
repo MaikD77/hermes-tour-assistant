@@ -37,6 +37,13 @@ und optionaler Telegram-Voice-Bubble.
   - Wikipedia-Inhalte vom LLM auf 30–60 Sekunden gekürzt
   - Aktiviert per `[[audio_as_voice]]`-Tag für native Voice-Bubble
   - Läuft lokal – keine Latenz, keine Kosten, offline-fähig
+- **Dynamische Cadence (Rhythmus) ⏱️:**
+  - Geschwindigkeitsabhängig: >20 km/h → 3 min, 5–20 km/h → 5 min, <5 km/h → 15 min
+  - Ziel-Annäherung: <5 km Rest → 2 min-Takt
+  - Orts-Annäherung: automatischer Wake bei <3 km zur nächsten Stadt
+  - Routenabweichung: sofortiger Wake bei >150 m Abweichung
+  - Mittags-Timer: 10–14 Uhr, einmaliger Einkehrtipp
+  - Maximal 15 min Stille als Fallback
 
 **Version 1.4** ergänzt den fachlich getrennten `city-walk-guide` und zieht
 gemeinsame Standort-, State-, Routing-, Provider- und Ausgabeprimitive in
