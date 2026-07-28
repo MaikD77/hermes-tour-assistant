@@ -32,10 +32,11 @@ und optionaler Telegram-Voice-Bubble.
   - Aktion + Distanz fett in Zeile 1 = Lock-Screen-Preview
   - Maximal 3 Zeilen pro Alert
   - Beispiel: `🌧️ **Regen in 12 min** – 8 km voraus`
-- **TTS-Sprachausgabe** (ElevenLabs / George):
+- **TTS-Sprachausgabe** (lokaler qwen3-george Klon 🎧):
   - POI-Ansagen werden als Telegram-Voice-Bubble ausgeliefert
   - Wikipedia-Inhalte vom LLM auf 30–60 Sekunden gekürzt
   - Aktiviert per `[[audio_as_voice]]`-Tag für native Voice-Bubble
+  - Läuft lokal – keine Latenz, keine Kosten, offline-fähig
 
 **Version 1.4** ergänzt den fachlich getrennten `city-walk-guide` und zieht
 gemeinsame Standort-, State-, Routing-, Provider- und Ausgabeprimitive in
