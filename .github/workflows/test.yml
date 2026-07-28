@@ -35,7 +35,11 @@ jobs:
 
       - name: Type-check canonical runtime
         if: matrix.python-version == '3.11'
-        run: mypy skills/outdoor-tour-assistant/scripts
+        run: >-
+          mypy
+          skills/location-session-core/scripts
+          skills/outdoor-tour-assistant/scripts
+          skills/city-walk-guide/scripts
 
       - name: Run tests with coverage
         run: pytest --cov --cov-report=term-missing --cov-fail-under=85

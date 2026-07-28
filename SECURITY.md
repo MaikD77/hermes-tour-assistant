@@ -25,6 +25,8 @@ Die Runtime erzwingt:
 ```bash
 python3 skills/outdoor-tour-assistant/scripts/tourctl.py harden-permissions
 python3 skills/outdoor-tour-assistant/scripts/tourctl.py cleanup --older-than-hours 48
+python3 skills/city-walk-guide/scripts/cityctl.py diagnose
+python3 skills/city-walk-guide/scripts/cityctl.py cleanup
 ```
 
 ## Trust Boundary
@@ -50,12 +52,21 @@ pseudonyme Session-ID, Trigger, Cadence, Flags und sanitierte Fehlercodes.
 unmittelbar folgenden Provideraufruf. Die Position darf nicht in Antworten,
 Debug-Exports oder öffentliche Tickets übernommen werden.
 
+Der City Walk Guide sendet präzise Koordinaten nur an die konfigurierten OSM-,
+Wikimedia- und OpenRouteService-Adapter, die für Suche und Fußroute erforderlich
+sind. Telegram-IDs werden nicht mitgesendet. Zugangsdaten kommen ausschließlich
+aus der Prozessumgebung. Der getrennte `city_guide_state.json` und der vorab
+geladene Story-Cache sind privat; abgeschlossene Sessions werden nach der
+konfigurierten Retention (standardmäßig 24 Stunden) zurückgesetzt.
+
 ## Ausgehende Verbindungen
 
 Der mitgelieferte Wetteradapter verwendet ausschließlich den fest definierten
 Open-Meteo-Endpunkt. Die Wasser-Suche verwendet eine feste Liste von
-Overpass-Endpunkten. Weitere Provider müssen durch die Registry konfiguriert
-und wie untrusted behandelt werden.
+Overpass-Endpunkten. Der City Walk Guide verwendet feste Endpunkte für
+OpenStreetMap/Overpass, die gewählte Wikipedia-Sprachversion, Wikidata und
+OpenRouteService. Weitere Provider müssen durch die Registry konfiguriert und
+wie untrusted behandelt werden.
 
 ## Sicherheitsgrenzen
 
