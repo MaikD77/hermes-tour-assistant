@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="1200" height="400">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f111a"/>
+      <stop offset="100%" style="stop-color:#1a1d2e"/>
+    </linearGradient>
+    <linearGradient id="cardG" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e293b;stop-opacity:0.8"/>
+      <stop offset="100%" style="stop-color:#1e293b;stop-opacity:0.4"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="400" fill="url(#bg)"/>
+  <pattern id="g" width="30" height="30" patternUnits="userSpaceOnUse">
+    <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+  </pattern>
+  <rect width="1200" height="400" fill="url(#g)"/>
+  <text x="600" y="58" text-anchor="middle" font-family="system-ui,sans-serif" font-size="28" font-weight="bold" fill="#e2e8f0">Hermes Tour Assistant</text>
+  <text x="600" y="82" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14" fill="#64748b">Dein persönlicher, leiser Begleiter für Radtour, Wanderung &amp; Stadtbummel</text>
+  <rect x="30" y="110" width="360" height="220" rx="12" fill="url(#cardG)" stroke="#22d3ee" stroke-width="1.5"/>
+  <circle cx="210" cy="170" r="35" fill="none" stroke="#22d3ee" stroke-width="2" opacity="0.3"/>
+  <text x="210" y="178" text-anchor="middle" font-size="32">🚴</text>
+  <text x="210" y="225" text-anchor="middle" font-family="system-ui,sans-serif" font-size="18" font-weight="bold" fill="#22d3ee">Outdoor Tour</text>
+  <text x="210" y="245" text-anchor="middle" font-family="system-ui,sans-serif" font-size="12" fill="#94a3b8">Routenüberwachung mit</text>
+  <text x="210" y="262" text-anchor="middle" font-family="system-ui,sans-serif" font-size="12" fill="#94a3b8">Echtzeit-Warnungen</text>
+  <text x="210" y="295" text-anchor="middle" font-family="system-ui,sans-serif" font-size="11" fill="#64748b">GPX · Wetter · Versorgung</text>
+  <rect x="420" y="100" width="360" height="240" rx="12" fill="url(#cardG)" stroke="#f472b6" stroke-width="2"/>
+  <circle cx="600" cy="165" r="40" fill="none" stroke="#f472b6" stroke-width="2" opacity="0.3"/>
+  <text x="600" y="174" text-anchor="middle" font-size="36">🏙️</text>
+  <text x="600" y="230" text-anchor="middle" font-family="system-ui,sans-serif" font-size="20" font-weight="bold" fill="#f472b6">City Walk Guide</text>
+  <text x="600" y="252" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" fill="#94a3b8">Persönlicher Stadtrundgang</text>
+  <text x="600" y="270" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" fill="#94a3b8">mit quellengestützten Geschichten</text>
+  <text x="600" y="308" text-anchor="middle" font-family="system-ui,sans-serif" font-size="11" fill="#64748b">OSM · Wikipedia · Voice</text>
+  <rect x="810" y="110" width="360" height="220" rx="12" fill="url(#cardG)" stroke="#34d399" stroke-width="1.5"/>
+  <circle cx="990" cy="170" r="35" fill="none" stroke="#34d399" stroke-width="2" opacity="0.3"/>
+  <text x="990" y="178" text-anchor="middle" font-size="32">💧</text>
+  <text x="990" y="225" text-anchor="middle" font-family="system-ui,sans-serif" font-size="18" font-weight="bold" fill="#34d399">Live Nearby</text>
+  <text x="990" y="245" text-anchor="middle" font-family="system-ui,sans-serif" font-size="12" fill="#94a3b8">Wasser, Essen, Reparatur</text>
+  <text x="990" y="262" text-anchor="middle" font-family="system-ui,sans-serif" font-size="12" fill="#94a3b8">auf Knopfdruck finden</text>
+  <text x="990" y="295" text-anchor="middle" font-family="system-ui,sans-serif" font-size="11" fill="#64748b">OSM · Overpass · 3 Optionen</text>
+  <text x="600" y="355" text-anchor="middle" font-family="system-ui,sans-serif" font-size="12" fill="#475569">🔌 Hermes Skill · 🐍 Python 3.11+ · 📦 MIT License · ⚡ CI/CD · 🤫 Silent by Default</text>
+  <text x="600" y="380" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" fill="#334155">github.com/MaikD77/hermes-tour-assistant</text>
+</svg>

@@ -1,5 +1,9 @@
 # Hermes Tour Assistant 🚴🚶
 
+<p align="center">
+  <img src="assets/hero.svg" alt="Hermes Tour Assistant" width="100%">
+</p>
+
 **Bau dir deinen persönlichen Tour-Begleiter für Hermes Agent.** Egal ob Radtour, Wanderung oder Stadtbummel — der Assistent überwacht deine Live-Standort, warnt vor Routenabweichungen, findet Wasser- und Versorgungspunkte, checkt das Wetter und erzählt dir an Stationen spannende Geschichten. Und das alles leise: Nur wenn wirklich was los ist, meldet er sich.
 
 - 🚴 **Outdoor Tour Assistant** — GPX-Routenüberwachung mit Echtzeit-Warnungen
@@ -223,3 +227,13 @@ Hermes-Tool-Audit. Details und Grenzen stehen in [SECURITY.md](SECURITY.md).
 ---
 
 > **GitHub Topics (empfohlen):** `hermes-agent`, `hermes-skill`, `outdoor`, `cycling`, `city-walk`, `gpx`, `telegram-bot`, `live-location`, `openstreetmap`, `osm`
+
+## Community & Austausch
+
+| Plattform | Wo posten? | Warum? |
+|-----------|-----------|--------|
+| 🎮 **Nous Discord** | [#agent](https://discord.gg/nousresearch) | 128k+ Mitglieder, aktivste Community |
+| 📱 **Reddit** | [r/hermesagent](https://reddit.com/r/hermesagent) | Offizielles Sub, Nous-Team aktiv |
+| 💬 **GitHub Discussions** | [Hermes Agent](https://github.com/nousresearch/hermes-agent/discussions) | Skills teilen & diskutieren |
+| 📖 **Skills Hub** | [Hermes Docs](https://hermes-agent.nousresearch.com/docs) | Community-Skills-Katalog |
+| 🐛 **Issues** | [Hier](https://github.com/MaikD77/hermes-tour-assistant/issues) | Bug-Reports & Feature-Wünsche
