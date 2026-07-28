@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-tour-assistant"
-version = "1.3.0"
-description = "Route-aware live tour assistant for Hermes Agent"
+version = "1.4.0"
+description = "Private, location-aware outdoor and city-walk assistants for Hermes Agent"
 requires-python = ">=3.11"
 
 [project.optional-dependencies]
@@ -36,6 +36,21 @@ py-modules = []
 "share/hermes-tour-assistant/skills/live-location-nearby/scripts" = [
   "skills/live-location-nearby/scripts/*.py",
 ]
+"share/hermes-tour-assistant/skills/location-session-core" = [
+  "skills/location-session-core/SKILL.md",
+]
+"share/hermes-tour-assistant/skills/location-session-core/scripts/location_core" = [
+  "skills/location-session-core/scripts/location_core/*.py",
+]
+"share/hermes-tour-assistant/skills/city-walk-guide" = [
+  "skills/city-walk-guide/SKILL.md",
+]
+"share/hermes-tour-assistant/skills/city-walk-guide/scripts" = [
+  "skills/city-walk-guide/scripts/*.py",
+]
+"share/hermes-tour-assistant/skills/city-walk-guide/references" = [
+  "skills/city-walk-guide/references/*.md",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -58,7 +73,11 @@ exclude = ["tests/"]
 
 [tool.coverage.run]
 branch = true
-source = ["skills/outdoor-tour-assistant/scripts"]
+source = [
+  "skills/location-session-core/scripts/location_core",
+  "skills/outdoor-tour-assistant/scripts",
+  "skills/city-walk-guide/scripts",
+]
 
 [tool.coverage.report]
 show_missing = true

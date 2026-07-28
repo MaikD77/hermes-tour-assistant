@@ -42,6 +42,56 @@ def test_release_versions_are_consistent(repository_root: Path) -> None:
     assert _frontmatter_version(
         repository_root / "skills" / "live-location-nearby" / "SKILL.md"
     ) == expected
+    assert _frontmatter_version(
+        repository_root / "skills" / "location-session-core" / "SKILL.md"
+    ) == expected
+    assert _frontmatter_version(
+        repository_root / "skills" / "city-walk-guide" / "SKILL.md"
+    ) == expected
+
+
+def test_city_skill_package_is_complete(repository_root: Path) -> None:
+    skill_dir = repository_root / "skills" / "city-walk-guide"
+    required = {
+        "city_contracts.py",
+        "city_planner.py",
+        "city_runtime.py",
+        "city_state.py",
+        "cityctl.py",
+        "live_city_gate.py",
+    }
+
+    assert required == {path.name for path in (skill_dir / "scripts").glob("*.py")}
+    assert (skill_dir / "references" / "cron-prompt.md").is_file()
+    assert (skill_dir / "references" / "evidence-and-voice.md").is_file()
+
+
+def test_shared_core_exports_are_available(repository_root: Path) -> None:
+    core = (
+        repository_root
+        / "skills"
+        / "location-session-core"
+        / "scripts"
+        / "location_core"
+    )
+
+    assert (core / "__init__.py").is_file()
+    for name in ("contracts.py", "repository.py", "route_engine.py", "providers.py"):
+        assert (core / name).is_file()
+
+
+def test_outdoor_compatibility_exports_shared_contracts(
+    contracts_module,
+    providers_module,
+    route_engine_module,
+) -> None:
+    from location_core.contracts import LocationSample
+    from location_core.providers import ProviderRegistry
+    from location_core.route_engine import RouteMatch
+
+    assert contracts_module.LocationSample is LocationSample
+    assert providers_module.ProviderRegistry is ProviderRegistry
+    assert route_engine_module.RouteMatch is RouteMatch
 
 
 def test_skill_script_references_exist(repository_root: Path) -> None:

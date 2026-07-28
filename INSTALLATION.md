@@ -10,16 +10,20 @@
 
 ## Skills installieren
 
-Die Runtime ist Bestandteil des kanonischen Skills. Es werden keine separaten
+Die Runtimes sind Bestandteil der kanonischen Skills. Es werden keine separaten
 Root-Skripte kopiert:
 
 ```bash
 cp -R skills/outdoor-tour-assistant ~/.hermes/skills/
 cp -R skills/live-location-nearby ~/.hermes/skills/
+cp -R skills/location-session-core ~/.hermes/skills/
+cp -R skills/city-walk-guide ~/.hermes/skills/
 ```
 
-Bei einem Update müssen beide Zielverzeichnisse vollständig durch die neue
+Bei einem Update müssen die Zielverzeichnisse vollständig durch die neue
 Version ersetzt oder über den Hermes-Skill-Installer aktualisiert werden.
+`location-session-core` ist ein interner Support-Skill: Er wird nicht direkt
+aufgerufen, muss aber neben den nutzerseitigen Skills installiert sein.
 
 ## Service-Umgebung
 
@@ -68,6 +72,48 @@ prompt: |
 
 Die vollständige Minimalaufgabe liegt unter
 `references/cron-prompt.md` im installierten Skill.
+
+### City Walk Guide
+
+Zusätzliche Umgebung:
+
+```bash
+export HERMES_CITY_GUIDE_CHAT_ID="123456"
+export OPENROUTESERVICE_API_KEY="..."
+# optional:
+export HERMES_CITY_GUIDE_STATE_DIR="$HOME/.hermes/state"
+export HERMES_CITY_GUIDE_RETENTION_HOURS="24"
+# optional bei zusätzlichen Registry-Adaptern:
+# export HERMES_CITY_GUIDE_ROUTE_PROVIDER="openrouteservice"
+# export HERMES_CITY_GUIDE_MAP_PROVIDER="openstreetmap"
+```
+
+Der City-Cronjob läuft ebenfalls jede Minute und verwendet:
+
+```text
+~/.hermes/skills/city-walk-guide/scripts/live_city_gate.py
+```
+
+Als Task-Text dient
+`skills/city-walk-guide/references/cron-prompt.md`. Für Telegram-Voice-Bubbles
+aktiviert der Nutzer im Chat `/voice tts`; Edge TTS benötigt keinen eigenen
+Schlüssel. `ffmpeg` muss auf dem Hermes-System installiert sein.
+
+Eine Tour wird aus einer privaten Request-Datei gestartet:
+
+```bash
+python3 ~/.hermes/skills/city-walk-guide/scripts/cityctl.py \
+  start --request /privater/pfad/city-request.json
+```
+
+Minimaler Inhalt ist `{}`; dann gelten 90 Minuten, Rundtour, Deutsch mit
+Englisch-Fallback und die Standardinteressen. Die Request-Datei anschließend
+löschen. Diagnose und Retention:
+
+```bash
+python3 ~/.hermes/skills/city-walk-guide/scripts/cityctl.py diagnose
+python3 ~/.hermes/skills/city-walk-guide/scripts/cityctl.py cleanup
+```
 
 ## Erstprüfung
 

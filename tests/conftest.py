@@ -14,6 +14,16 @@ RUNTIME_DIR = (
     / "outdoor-tour-assistant"
     / "scripts"
 )
+CITY_DIR = REPOSITORY_ROOT / "skills" / "city-walk-guide" / "scripts"
+CORE_DIR = (
+    REPOSITORY_ROOT
+    / "skills"
+    / "location-session-core"
+    / "scripts"
+)
+for runtime_path in (CITY_DIR, CORE_DIR):
+    if str(runtime_path) not in sys.path:
+        sys.path.insert(0, str(runtime_path))
 
 
 def load_module(path: Path, module_name: str) -> ModuleType:
@@ -79,6 +89,36 @@ def output_safety_module() -> ModuleType:
 @pytest.fixture
 def prepare_tour_module() -> ModuleType:
     return load_module(RUNTIME_DIR / "prepare_tour.py", "prepare_tour")
+
+
+@pytest.fixture
+def city_contracts_module() -> ModuleType:
+    return load_module(CITY_DIR / "city_contracts.py", "city_contracts")
+
+
+@pytest.fixture
+def city_state_module() -> ModuleType:
+    return load_module(CITY_DIR / "city_state.py", "city_state")
+
+
+@pytest.fixture
+def city_planner_module() -> ModuleType:
+    return load_module(CITY_DIR / "city_planner.py", "city_planner")
+
+
+@pytest.fixture
+def city_runtime_module() -> ModuleType:
+    return load_module(CITY_DIR / "city_runtime.py", "city_runtime")
+
+
+@pytest.fixture
+def city_gate_module() -> ModuleType:
+    return load_module(CITY_DIR / "live_city_gate.py", "live_city_gate")
+
+
+@pytest.fixture
+def cityctl_module() -> ModuleType:
+    return load_module(CITY_DIR / "cityctl.py", "cityctl")
 
 
 @pytest.fixture

@@ -48,7 +48,7 @@ out center tags;"""
             req = urllib.request.Request(
                 endpoint,
                 data=body,
-                headers={"User-Agent": "Hermes-live-location-nearby/1.3"},
+                headers={"User-Agent": "Hermes-live-location-nearby/1.4"},
             )
             with urllib.request.urlopen(req, timeout=20) as response:
                 raw = response.read(MAX_RESPONSE_BYTES + 1)

@@ -1,18 +1,24 @@
-# Hermes Tour Assistant 🚴
+# Hermes Tour Assistant 🚴🚶
 
 [![Tests](https://github.com/MaikD77/hermes-tour-assistant/actions/workflows/test.yml/badge.svg)](https://github.com/MaikD77/hermes-tour-assistant/actions/workflows/test.yml)
 
-Ein leiser, routenbewusster Tour-Assistent für
-[Hermes Agent](https://hermes-agent.nousresearch.com). Er verarbeitet
-Telegram-Live-Standorte, ordnet Positionen deterministisch einer GPX-Route zu
-und liefert nur neue, belegte und handlungsrelevante Ereignisse aus.
+Private, standortbewusste Outdoor- und Stadtführungs-Skills für
+[Hermes Agent](https://hermes-agent.nousresearch.com). Der Outdoor-Assistent
+überwacht GPX-Touren leise und ereignisbasiert. Der City Walk Guide plant einen
+persönlichen, belegten Stadtrundgang und erzählt an erreichten Stationen per Text
+und optionaler Telegram-Voice-Bubble.
 
 > **Schweigen ist der Normalfall.** Ohne ausgewähltes Ereignis antwortet der
 > Cron-Agent ausschließlich mit `[SILENT]`.
 
-## Stand: Version 1.3
+## Stand: Version 1.4
 
-Version 1.3 verwendet einen einzigen produktiven Datenfluss:
+Version 1.4 ergänzt den fachlich getrennten `city-walk-guide` und zieht
+gemeinsame Standort-, State-, Routing-, Provider- und Ausgabeprimitive in
+`location-session-core`. Der Outdoor-State v3 und seine Migration bleiben
+kompatibel.
+
+Der Outdoor-Assistent verwendet weiterhin einen einzigen produktiven Datenfluss:
 
 - ein selbst enthaltenes, installierbares Skill-Paket;
 - Session-State v3 mit Migration aus v1 und v2;
@@ -29,6 +35,18 @@ Version 1.3 verwendet einen einzigen produktiven Datenfluss:
 - sichere Markdown-Labels und ausschließlich lokal erzeugte Navigationslinks;
 - Diagnose-, Retention- und Agent-Kommandos über `tourctl.py`.
 
+Der City Walk Guide bietet zusätzlich:
+
+- einen validierten `GuideRequest` für 30–240 Minuten;
+- standardmäßig einen 90-minütigen Rundgang mit lokalem Leben, Genuss,
+  Geschichte und Architektur;
+- OSM-Kandidaten sowie deutsche Wikipedia- und Wikidata-Inhalte mit markiertem
+  Englisch-Fallback;
+- eine OpenRouteService-Fußroute innerhalb von ±15 Prozent des Zeitbudgets;
+- privat vorab geladene, quellengestützte Geschichten;
+- Stopauslösung bis 80 Meter und Neuplanung nach zwei Abweichungen ab 120 Meter;
+- validierte Betriebs- und Dialogkommandos über `cityctl.py`.
+
 Die Anwendung ist ein Informations- und Entwicklungswerkzeug, kein
 zertifiziertes Navigations- oder Warnsystem.
 
@@ -38,10 +56,10 @@ zertifiziertes Navigations- oder Warnsystem.
 flowchart LR
     T["Telegram-Location-Cache"] --> I["Input Adapter<br/>Schema, Alter, Session"]
     I --> S["State Repository v3<br/>Lock, 0700/0600, atomar"]
-    S --> G["Deterministische Gate Policy"]
+    S --> G["Profilspezifische Gate Policy"]
     G --> C["Cron GateDecision<br/>sanitierter Kontext"]
-    C --> A["Outdoor-Tour-Skill"]
-    A --> P["Provider Adapter"]
+    C --> A["Outdoor- oder City-Skill"]
+    A --> P["Gemeinsame Provider Adapter"]
     P --> N["Normalisierung + Evidenz"]
     N --> R["Route Engine"]
     N --> E["Event Engine"]
@@ -94,14 +112,28 @@ hermes-tour-assistant/
 │   │   │   ├── tourctl.py
 │   │   │   └── prepare_tour.py
 │   │   └── references/
+│   ├── city-walk-guide/
+│   │   ├── SKILL.md
+│   │   ├── scripts/
+│   │   │   ├── city_contracts.py
+│   │   │   ├── city_planner.py
+│   │   │   ├── city_runtime.py
+│   │   │   ├── city_state.py
+│   │   │   ├── cityctl.py
+│   │   │   └── live_city_gate.py
+│   │   └── references/
+│   ├── location-session-core/
+│   │   ├── SKILL.md
+│   │   └── scripts/location_core/
 │   └── live-location-nearby/
 │       ├── SKILL.md
 │       └── scripts/find_water.py
 └── tests/
 ```
 
-`skills/outdoor-tour-assistant/` ist die einzige Quelle für Skill und Runtime.
-Es gibt keinen zweiten Root-Skill und keine zweite Kopie der Skripte.
+Jeder nutzerseitige Skill besitzt genau einen kanonischen Ordner. Der interne
+`location-session-core` enthält die gemeinsam genutzte Implementierung; schmale
+Outdoor-Kompatibilitätsmodule erhalten bestehende Installationen und Imports.
 
 ## Schnellstart
 
@@ -110,6 +142,8 @@ git clone https://github.com/MaikD77/hermes-tour-assistant.git
 cd hermes-tour-assistant
 cp -R skills/outdoor-tour-assistant ~/.hermes/skills/
 cp -R skills/live-location-nearby ~/.hermes/skills/
+cp -R skills/location-session-core ~/.hermes/skills/
+cp -R skills/city-walk-guide ~/.hermes/skills/
 ```
 
 Die Hermes-Service-Umgebung benötigt mindestens:
@@ -120,6 +154,9 @@ export HERMES_TOUR_ACTIVITY="cycling"  # oder walking
 export HERMES_TOUR_LOCALE="de-DE"
 # optional: Verzeichnis mit vorab exportierten GPX-Routen
 export HERMES_TOUR_ROUTE_DIR="/privater/pfad/zu/routen"
+# für den City Walk Guide
+export HERMES_CITY_GUIDE_CHAT_ID="DEINE_TELEGRAM_CHAT_ID"
+export OPENROUTESERVICE_API_KEY="DEIN_ORS_SCHLUESSEL"
 ```
 
 Das Gate muss jede Minute gestartet werden:
@@ -151,7 +188,7 @@ Beschädigte Dateien werden privat unter
 ```bash
 python3 -m pip install -e ".[test]"
 ruff check skills tests
-mypy skills/outdoor-tour-assistant/scripts
+mypy skills/location-session-core/scripts skills/outdoor-tour-assistant/scripts skills/city-walk-guide/scripts
 pytest --cov --cov-fail-under=85
 python3 -m build
 ```
@@ -161,7 +198,10 @@ erfolgt über Replay, Shadow Mode und Canary Delivery.
 
 ## Datenschutz
 
-Präzise Standorte bleiben aus Gate-Ausgabe und Diagnoseberichten heraus. Ein
+Präzise Standorte bleiben aus Gate-Ausgabe und Diagnoseberichten heraus. City
+Walks verwenden den separaten privaten State
+`~/.hermes/state/city_guide_state.json` und werden nach Abschluss standardmäßig
+nach 24 Stunden bereinigt. Ein
 expliziter Provideraufruf kann die aktuelle oder vorausliegende Position an den
 konfigurierten Anbieter übertragen und erscheint gegebenenfalls im
 Hermes-Tool-Audit. Details und Grenzen stehen in [SECURITY.md](SECURITY.md).

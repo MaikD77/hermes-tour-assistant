@@ -1,7 +1,7 @@
 ---
 name: outdoor-tour-assistant
 description: "Quiet, route-aware monitoring for active cycling and walking tours. Uses a deterministic session, route and event runtime and reports only new actionable events ahead."
-version: 1.3.0
+version: 1.4.0
 author: MaikD77
 license: MIT
 platforms: [linux, macos]
@@ -9,7 +9,7 @@ metadata:
   hermes:
     category: productivity
     tags: [cycling, hiking, live-location, route-awareness, monitoring]
-    related_skills: [live-location-nearby, maps, komoot]
+    related_skills: [location-session-core, live-location-nearby, maps, komoot]
     requires_toolsets: [terminal, web]
 ---
 

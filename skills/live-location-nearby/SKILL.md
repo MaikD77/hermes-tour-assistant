@@ -1,7 +1,7 @@
 ---
 name: live-location-nearby
 description: "Use the newest Telegram live-location coordinate for compact nearby water, food, repair, shelter, and supply results."
-version: 1.3.0
+version: 1.4.0
 author: MaikD77
 license: MIT
 platforms: [linux, macos]
