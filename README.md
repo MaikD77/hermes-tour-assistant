@@ -44,6 +44,11 @@ und optionaler Telegram-Voice-Bubble.
   - Routenabweichung: sofortiger Wake bei >150 m Abweichung
   - Mittags-Timer: 10–14 Uhr, einmaliger Einkehrtipp
   - Maximal 15 min Stille als Fallback
+- **Live-Standort-Frequenz 📡:**
+  - Telegram sendet auf dem iPhone alle 2–10 Sekunden
+  - Hermes-Adapter cached alle Edits → kein LLM-Call pro Update
+  - Gate-Script entscheidet im Sekunden/Minuten-Takt, ob der Agent geweckt wird
+  - ≈600 Location-Updates/Stunde → ≈12–20 LLM-Checks/Stunde
 
 **Version 1.4** ergänzt den fachlich getrennten `city-walk-guide` und zieht
 gemeinsame Standort-, State-, Routing-, Provider- und Ausgabeprimitive in
