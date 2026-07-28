@@ -1,7 +1,5 @@
 # Hermes Tour Assistant 🚴🚶
 
-[![Tests](https://github.com/MaikD77/hermes-tour-assistant/actions/workflows/test.yml/badge.svg)](https://github.com/MaikD77/hermes-tour-assistant/actions/workflows/test.yml)
-
 Private, standortbewusste Outdoor- und Stadtführungs-Skills für
 [Hermes Agent](https://hermes-agent.nousresearch.com). Der Outdoor-Assistent
 überwacht GPX-Touren leise und ereignisbasiert. Der City Walk Guide plant einen
