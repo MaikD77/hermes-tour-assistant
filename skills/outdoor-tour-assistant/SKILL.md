@@ -93,14 +93,55 @@ when all are safety-critical. A routine `check_in` without a selected event is
 
 ## Alert format
 
+Alerts must be optimized for iPhone notification preview. Telegram shows the
+first 2–3 lines in the lock screen notification — everything must be
+understandable in a glance. Use this structure:
+
 ```markdown
-**<Action>** – <distance ahead>
-<Evidence and confidence> · <on route or detour>
-[Navigation](<runtime-generated directions URL>)
+🌧️ **Regen in 12 min** – 8 km voraus
+Noch 28 km zum Ziel · bei 24 km/h schaffst du's · [Route](<url>)
 ```
 
-Escape provider labels before Markdown rendering. Generate navigation links only
-from validated coordinates; never reuse a provider-supplied URL as trusted output.
+**Mobile formatting rules:**
+1. Start each alert with a **single emoji** as visual category marker:
+   - 🌧️ Regen / Wetter
+   - ⚠️ Gefahr / Sicherheit
+   - 🚴 Routenabweichung
+   - 🏘️ Ortsannäherung
+   - 🍽️ Versorgung / Einkehr
+   - 📍 POI / Sehenswürdigkeit
+   - ✅ Info / Check-in
+2. Bold the **action + distance** on line 1 — that's the lock screen preview.
+3. Line 2+ contains context, always ending with a navigation link.
+4. Never exceed **3 lines** total. One normal event per wake, up to 3 only
+   when all are safety-critical.
+5. Never include precise coordinates, chat IDs, or internal state keys.
+6. Escape provider labels before Markdown rendering. Generate navigation links
+   only from validated coordinates; never reuse a provider-supplied URL.
+
+**Weather Hunter examples:**
+
+```
+🌧️ **Regen in 12 min** – 8 km voraus
+Noch 28 km · bei 24 km/h schaffst du's trocken · [Route](<url>)
+```
+
+```
+🌧️ **Regen in 8 min** – such dir Unterstand
+Noch 45 km Fahrt · hält bis zu 1h · [Route](<url>)
+```
+
+**Standard alerts:**
+
+```
+🏘️ **Klingenberg** – 2 km voraus
+Eiscafé + Supermarkt bis 20 Uhr · auf der Route · [Route](<url>)
+```
+
+```
+⚠️ **Schiebestelle** – 300 m voraus
+Treppe, 15 Stufen, Rampe vorhanden · auf der Route · [Route](<url>)
+```
 
 ## Failure behavior
 
