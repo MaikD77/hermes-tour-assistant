@@ -20,9 +20,15 @@ und optionaler Telegram-Voice-Bubble.
 > **Schweigen ist der Normalfall.** Ohne ausgewähltes Ereignis antwortet der
 > Cron-Agent ausschließlich mit `[SILENT]`.
 
-## Stand: Version 1.4
+|Stand: Version 1.4.1
 
-Version 1.4 ergänzt den fachlich getrennten `city-walk-guide` und zieht
+**Neu in 1.4.1 — Weather Hunter 🌤️**
+- Stündliche Niederschlagsvorhersage via Open-Meteo
+- Berechnet ob du dem Regen davonfahren kannst ("Noch 15 min bis Regen — bei 28 km/h schaffst du's!")
+- Neue Event-Priorität `weather_hunter` im Event-Engine-Cooldown-System
+- CLI-Kommando `tourctl.py weather-forecast --hours 3`
+
+**Version 1.4** ergänzt den fachlich getrennten `city-walk-guide` und zieht
 gemeinsame Standort-, State-, Routing-, Provider- und Ausgabeprimitive in
 `location-session-core`. Der Outdoor-State v3 und seine Migration bleiben
 kompatibel.
