@@ -22,7 +22,7 @@ und optionaler Telegram-Voice-Bubble.
 
 ## Stand: Version 1.4.1
 
-**Neu in 1.4.1 — Weather Hunter 🌤️ & Mobile-Optimierung 📱**
+**Neu in 1.4.1 — Weather Hunter 🌤️ & Mobile-Optimierung 📱 & TTS-Sprachausgabe 🎧**
 - Stündliche Niederschlagsvorhersage via Open-Meteo
 - Berechnet ob du dem Regen davonfahren kannst ("Noch 15 min bis Regen — bei 28 km/h schaffst du's!")
 - Neue Event-Priorität `weather_hunter` im Event-Engine-Cooldown-System
@@ -32,6 +32,10 @@ und optionaler Telegram-Voice-Bubble.
   - Aktion + Distanz fett in Zeile 1 = Lock-Screen-Preview
   - Maximal 3 Zeilen pro Alert
   - Beispiel: `🌧️ **Regen in 12 min** – 8 km voraus`
+- **TTS-Sprachausgabe** (ElevenLabs / George):
+  - POI-Ansagen werden als Telegram-Voice-Bubble ausgeliefert
+  - Wikipedia-Inhalte vom LLM auf 30–60 Sekunden gekürzt
+  - Aktiviert per `[[audio_as_voice]]`-Tag für native Voice-Bubble
 
 **Version 1.4** ergänzt den fachlich getrennten `city-walk-guide` und zieht
 gemeinsame Standort-, State-, Routing-, Provider- und Ausgabeprimitive in
