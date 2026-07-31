@@ -19,6 +19,20 @@ from .location_sources import (
     TelegramLocationSource,
     parse_source_order,
 )
+from .movement import (
+    DataQuality,
+    EngineState,
+    MovementConfig,
+    MovementEngine,
+    MovementEvent,
+    MovementEventType,
+    MovementMode,
+    MovementResult,
+    MovementSegment,
+    MovementState,
+    ProcessingStatus,
+)
+from .movement_state import MovementStateRepository
 from .output_safety import navigation_url, safe_label, safe_prose
 from .providers import ProviderRegistry
 from .repository import CorruptStateError, JsonStateRepository
@@ -36,6 +50,18 @@ __all__ = [
     "LocationSourceResolver",
     "LocationSourceResult",
     "LocationStatus",
+    "DataQuality",
+    "EngineState",
+    "MovementConfig",
+    "MovementEngine",
+    "MovementEvent",
+    "MovementEventType",
+    "MovementMode",
+    "MovementResult",
+    "MovementSegment",
+    "MovementState",
+    "MovementStateRepository",
+    "ProcessingStatus",
     "HttpOwnTracksReceiver",
     "OwnTracksLocationSource",
     "ReplayLocationSource",

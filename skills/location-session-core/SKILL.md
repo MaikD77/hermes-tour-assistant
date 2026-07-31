@@ -28,3 +28,9 @@ never expose precise coordinates in gate or diagnostic output.
 ## Source architecture
 
 `location_core.location_sources` is the only boundary between untrusted source payloads and consumers. It exposes immutable `LocationObservation` values, typed source results, OwnTracks/Telegram/replay adapters, and a sequential resolver. `HERMES_LOCATION_SOURCE_ORDER` defaults to `owntracks,telegram`; `telegram,owntracks` preserves legacy priority. Consumers must not inspect adapter payloads or let a source write tour state. Diagnostics remain coordinate-free.
+
+## Movement inference
+
+`location_core.movement` consumes only canonical observations. Its immutable state, events and segments are deterministic and source-neutral. Defaults: stationary <=0.7 m/s within 15 m; walking <=2.6 m/s; cycling below the 10 m/s automotive entry threshold (up to a 12 m/s cycling band); automotive >=10 m/s. Three confirming observations, 20 seconds and a 45-second cooldown stabilize transitions. GPS accuracy, missing fields, sensor disagreement, implausible speed and gaps reduce quality (`good`, `limited`, `poor`, `invalid`); poor input cannot confirm a transition.
+
+Segments contain aggregate distance, displacement, speed, heading, quality and gap counts, never a full coordinate list. Medium gaps continue uncertain; >=900 seconds complete the segment. `movement_state` reuses `JsonStateRepository`. The CLI supports sanitized status/diagnose, synthetic-only replay and movement-only reset. Consumers may run this in shadow mode, but it must not change Tour/City state, gates, event priority or delivery.

@@ -285,3 +285,18 @@ Der Resolver fragt Quellen strikt nacheinander ab; die erste gültige und aktuel
 ### Beobachtungsidentität und Zeitmodell
 
 `observation_id` ist eine reproduzierbare, koordinatenfreie SHA-256-Kennung über kanonisch serialisierte Identitätsfelder einer einzelnen Quellenbeobachtung. Sie ist keine Personen-, Sitzungs- oder Ortskennung. `observed_at` und `received_at` sind intern ausschließlich timezone-aware UTC-`datetime`-Werte. Quellspezifische Metadaten werden nach Adapter-Allowlist als sortiertes, unveränderliches Tuple gespeichert; Rohpayloads, Koordinatenkopien, Secrets und Credential-URLs sind unzulässig. Die Architekturentscheidung und Migrationsfolgen stehen in [ADR 0001](docs/adr/0001-location-sources-are-adapters.md).
+
+## Deterministische Movement Engine
+
+Der gemeinsame Core leitet aus `LocationObservation` ausschließlich regelbasiert die Modi `unknown`, `stationary`, `walking`, `cycling` und `automotive` ab. Bestätigte Übergänge erzeugen deterministische Ereignisse und kompakte aktive oder abgeschlossene Segmente. Confidence bezeichnet nur technische Klassifikationssicherheit. Hysterese (drei Beobachtungen, 20 s Mindestdauer, 45 s Cooldown), Qualitätsgrenzen und getrennte Eintrittsbänder verhindern Flattern und Fehlklassifikationen durch einzelne GPS-Sprünge. Kurze Lücken bis 180 s bleiben im Segment; ab 900 s wird es abgeschlossen.
+
+```mermaid
+flowchart TD
+  O[LocationObservation] --> V[Observation validation]
+  V --> E[Movement Engine]
+  E --> S[MovementState]
+  S --> ES[MovementEvents + MovementSegment]
+  ES --> C[Outdoor / City / zukünftige Context Consumer]
+```
+
+Die Engine ist in Sprint 2 nicht an Versand- oder Gate-Entscheidungen angeschlossen. `movementctl.py status|diagnose|replay|reset` bietet koordinatenfreie Diagnose; Replay akzeptiert nur Dateien mit `synthetic: true`. Details: [ADR 0002](docs/adr/0002-movement-from-canonical-observations.md).

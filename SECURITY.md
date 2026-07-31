@@ -84,3 +84,7 @@ Funde privat an den Repository-Eigentümer melden.
 ## Standort-Datengrenze
 
 Standortantworten und Snapshots gelten als nicht vertrauenswürdig und werden strikt ohne stillschweigende String-zu-Zahl-Konvertierung validiert. Der Resolver protokolliert ausschließlich Quelle und Ergebniszustand; Koordinaten gehören weder in normale Logs noch in Gate-stdout. Adapter verändern keinen Tour-State. OwnTracks-Persistenz, Retention und Dateiberechtigungen bleiben Eigentum des lokalen Receivers; der Core nutzt nur dessen schmale HTTP-/Repository-Schnittstelle. Es werden keine Ports geöffnet und weder Tailscale- noch TLS-Einstellungen geändert.
+
+## Movement-Datenschutzgrenze
+
+Die Movement Engine arbeitet offline, ruft weder Provider noch LLM auf und sendet keine Nachrichten. Status und Diagnose enthalten keine Koordinaten oder Rohpayloads. Der private State enthält nur einen begrenzten Puffer normalisierter, für Segmentmetriken benötigter Merkmale; es entsteht keine unbegrenzte Route oder Personenbewertung. Deterministische IDs sind fachliche Deduplizierungsschlüssel. Symlinks werden abgewiesen, Writes sind atomar und gesperrt, beschädigte Dateien werden nicht überschrieben. Movement Confidence ist technische Klassifikationssicherheit, keine Aussage über den Nutzer.

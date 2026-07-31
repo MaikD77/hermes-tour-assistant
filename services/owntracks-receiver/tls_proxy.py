@@ -52,6 +52,8 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
 
 
 def main():
+    if TLS_CERT is None or TLS_KEY is None:
+        raise RuntimeError("TLS_CERT and TLS_KEY are required")
     server = http.server.HTTPServer(("0.0.0.0", TLS_PORT), ProxyHandler)
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(TLS_CERT, TLS_KEY)
