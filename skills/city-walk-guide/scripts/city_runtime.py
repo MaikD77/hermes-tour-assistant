@@ -33,9 +33,10 @@ from city_planner import (  # noqa: E402
 from city_state import StateRepository, empty_state  # noqa: E402
 from location_core.contracts import (  # noqa: E402
     GateDecision,
-    LocationSample,
+    LocationSample,  # noqa: F401 - compatibility export for callers
     RouteGeometry,
 )
+from location_core.location_sources import LocationObservation  # noqa: E402
 from location_core.output_safety import safe_label, safe_prose  # noqa: E402
 from location_core.providers import (  # noqa: E402
     EntityKnowledgeProvider,
@@ -248,7 +249,7 @@ class CityRuntime:
 
     def plan_and_start(
         self,
-        sample: LocationSample,
+        sample: LocationObservation,
         request: GuideRequest,
         registry: ProviderRegistry,
         *,
@@ -392,7 +393,7 @@ class CityRuntime:
 
     def evaluate_gate(
         self,
-        sample: LocationSample,
+        sample: LocationObservation,
         *,
         now: float | None = None,
     ) -> GateDecision:
@@ -670,7 +671,7 @@ class CityRuntime:
 
     def replan(
         self,
-        sample: LocationSample,
+        sample: LocationObservation,
         registry: ProviderRegistry,
         *,
         request_override: GuideRequest | None = None,

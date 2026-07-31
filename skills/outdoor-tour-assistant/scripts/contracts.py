@@ -27,11 +27,13 @@ from location_core.contracts import (  # noqa: E402,F401
     ProviderResult,
     RouteGeometry,
 )
+from location_core.location_sources import LocationObservation  # noqa: E402,F401
 
 __all__ = [
     "AlertDecision",
     "GateDecision",
     "LocationSample",
+    "LocationObservation",
     "ProviderResult",
     "RouteGeometry",
 ]

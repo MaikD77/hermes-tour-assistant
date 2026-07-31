@@ -39,3 +39,6 @@ HERMES_OWNTRACKS_URL=http://127.0.0.1:9090/location  # default
 curl -s http://127.0.0.1:9090/location
 # → {"result":"ok","latitude":50.987,"longitude":11.023,"stale":false,...}
 ```
+## Source abstraction (v1.5)
+
+OwnTracks is accessed only through `OwnTracksLocationSource` and the receiver's local HTTP repository interface. The shared core has no knowledge of the SQLite schema. Resolver default is `owntracks,telegram`; use `HERMES_LOCATION_SOURCE_ORDER=telegram,owntracks` during legacy migration.

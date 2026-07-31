@@ -216,3 +216,7 @@ privat quarantänisiert und einmalig als Betriebsfehler gemeldet.
 3. **Canary:** nur Start, eindeutiges Off-Route und schwere Warnungen.
 4. **Normalbetrieb:** POI- und Versorgungshinweise erst nach erfolgreicher
    Canary-Tour aktivieren.
+
+## Standortquellen konfigurieren
+
+Neue Installationen verwenden `HERMES_LOCATION_SOURCE_ORDER=owntracks,telegram`. Für eine bestehende Installation ohne Verhaltensänderung zunächst `HERMES_LOCATION_SOURCE_ORDER=telegram,owntracks` setzen. Nach Prüfung des lokalen OwnTracks-Receivers kann auf den neuen Standard gewechselt werden. `HERMES_OWNTRACKS_URL` zeigt weiter auf dessen lokale `/location`-Schnittstelle; der Core öffnet SQLite nie direkt. Replay wird programmgesteuert über `ReplayLocationSource` für Tests oder Offline-Abläufe eingespeist und benötigt keine zusätzliche Persistenz.

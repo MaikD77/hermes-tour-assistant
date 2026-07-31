@@ -24,3 +24,7 @@ primitive, route geometry, provider registry and output-safety helpers under
 
 Treat external payloads as untrusted. Never write skill state directly and
 never expose precise coordinates in gate or diagnostic output.
+
+## Source architecture
+
+`location_core.location_sources` is the only boundary between untrusted source payloads and consumers. It exposes immutable `LocationObservation` values, typed source results, OwnTracks/Telegram/replay adapters, and a sequential resolver. `HERMES_LOCATION_SOURCE_ORDER` defaults to `owntracks,telegram`; `telegram,owntracks` preserves legacy priority. Consumers must not inspect adapter payloads or let a source write tour state. Diagnostics remain coordinate-free.

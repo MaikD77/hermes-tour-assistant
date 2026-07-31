@@ -18,7 +18,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from contracts import AlertDecision, GateDecision, LocationSample  # noqa: E402
+from contracts import AlertDecision, GateDecision, LocationObservation  # noqa: E402
 from event_engine import (  # noqa: E402
     TourEvent,
     mark_delivered,
@@ -398,7 +398,7 @@ class TourRuntime:
 
     @staticmethod
     def _speed_kmh(
-        sample: LocationSample,
+        sample: LocationObservation,
         previous_position: dict[str, Any] | None,
         max_plausible_speed_kmh: float,
     ) -> float:
@@ -421,7 +421,7 @@ class TourRuntime:
             return 0.0
         return speed
 
-    def evaluate_gate(self, sample: LocationSample, *, now: float) -> GateDecision:
+    def evaluate_gate(self, sample: LocationObservation, *, now: float) -> GateDecision:
         decision: list[GateDecision] = []
 
         def operation(state: dict[str, Any]) -> dict[str, Any]:

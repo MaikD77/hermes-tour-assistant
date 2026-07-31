@@ -262,3 +262,22 @@ Hermes-Tool-Audit. Details und Grenzen stehen in [SECURITY.md](SECURITY.md).
 | 💬 **GitHub Discussions** | [Hermes Agent](https://github.com/nousresearch/hermes-agent/discussions) | Skills teilen & diskutieren |
 | 📖 **Skills Hub** | [Hermes Docs](https://hermes-agent.nousresearch.com/docs) | Community-Skills-Katalog |
 | 🐛 **Issues** | [Hier](https://github.com/MaikD77/hermes-tour-assistant/issues) | Bug-Reports & Feature-Wünsche
+
+## Quellenneutrale Standortarchitektur
+
+Alle Standortverbraucher arbeiten mit einer unveränderlichen, validierten `LocationObservation`; Telegram-, OwnTracks- und Replay-Payloads bleiben in ihren Adaptern. Die deterministische Standardreihenfolge ist `owntracks,telegram` und kann mit `HERMES_LOCATION_SOURCE_ORDER` geändert werden. Telegram bleibt eine unterstützte Fallback- und Legacy-Quelle. Bestehende Installationen stellen das frühere Verhalten mit `telegram,owntracks` wieder her. `ReplayLocationSource` dient reproduzierbaren Tests und Offline-Demonstrationen und legt keine Historien-Datenbank an.
+
+```mermaid
+flowchart LR
+  OT[OwnTracks Receiver API] --> OA[OwnTracks adapter]
+  TG[Telegram snapshot] --> TA[Telegram adapter]
+  RP[Replay observations] --> RA[Replay adapter]
+  OA --> R[Deterministic source resolver]
+  TA --> R
+  RA --> R
+  R --> O[LocationObservation]
+  O --> OG[Outdoor gate/runtime]
+  O --> CG[City gate/runtime]
+```
+
+Der Resolver fragt Quellen strikt nacheinander ab; die erste gültige und aktuelle Beobachtung gewinnt. Diagnosen enthalten nur Quellname und Zustand (`not_available`, `stale`, `invalid`, `unreachable`), niemals genaue Koordinaten.
