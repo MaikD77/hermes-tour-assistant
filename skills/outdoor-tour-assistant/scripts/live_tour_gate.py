@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""Private, deterministic cron gate for active Telegram live-location sessions."""
+"""Private, deterministic cron gate for active Telegram + OwnTracks location sessions."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
 import time
+import urllib.error
+import urllib.request
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +33,9 @@ STATE = STATE_DIR / "live_tour_assistant.json"
 CHAT_ID = os.environ.get("HERMES_TOUR_CHAT_ID", "").strip()
 MAX_LOCATION_AGE_SECONDS = float(
     os.environ.get("HERMES_TOUR_LOCATION_MAX_AGE_SECONDS", "300")
+)
+OWNTRACKS_URL = os.environ.get(
+    "HERMES_OWNTRACKS_URL", "http://127.0.0.1:9090/location"
 )
 
 
@@ -80,6 +87,46 @@ def select_location(
     return max(valid, key=lambda sample: sample.observed_at)
 
 
+def fetch_owntracks_location(url: str, now: float, max_age_seconds: float) -> LocationSample | None:
+    """Fetch the latest location from the OwnTracks receiver."""
+    try:
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            body = json.loads(resp.read().decode())
+    except (OSError, json.JSONDecodeError, urllib.error.URLError):
+        return None
+    if not isinstance(body, dict) or body.get("result") != "ok":
+        return None
+    try:
+        lat = float(body["latitude"])
+        lon = float(body["longitude"])
+        observed_str = body.get("observed_at", "")
+        stale = body.get("stale", True)
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not isinstance(observed_str, str) or not observed_str:
+        return None
+    try:
+        observed_at = (
+            datetime.fromisoformat(observed_str.replace("Z", "+00:00"))
+            .timestamp()
+        )
+    except (ValueError, TypeError):
+        return None
+    if stale or now - observed_at > max_age_seconds:
+        return None
+    digest = hashlib.sha256(f"owntracks\x00maik\x00iphone".encode()).hexdigest()[:20]
+    return LocationSample(
+        session_id=f"owntracks-{digest}",
+        message_id="owntracks",
+        observed_at=observed_at,
+        expires_at=observed_at + max_age_seconds,
+        lat=lat,
+        lon=lon,
+        source="owntracks",
+    )
+
+
 def emit(decision: GateDecision) -> None:
     print(json.dumps(decision.to_cron_payload(), separators=(",", ":")))
 
@@ -126,6 +173,9 @@ def main(now: float | None = None) -> None:
     if not 30 <= MAX_LOCATION_AGE_SECONDS <= 3600:
         _operational_error(runtime, "invalid_location_max_age", current_time)
         return
+
+    # Try Telegram live-location first
+    sample: LocationSample | None = None
     try:
         snapshot = read_snapshot(SNAPSHOT)
         sample = select_location(
@@ -134,9 +184,17 @@ def main(now: float | None = None) -> None:
             now=current_time,
             max_age_seconds=MAX_LOCATION_AGE_SECONDS,
         )
-    except SnapshotError as error:
-        _operational_error(runtime, str(error), current_time)
-        return
+    except SnapshotError:
+        pass
+
+    # Fallback to OwnTracks if Telegram has no fresh location
+    if sample is None:
+        sample = fetch_owntracks_location(
+            OWNTRACKS_URL,
+            now=current_time,
+            max_age_seconds=MAX_LOCATION_AGE_SECONDS,
+        )
+
     if sample is None:
         try:
             runtime.end_active_session(ended_at=current_time)
