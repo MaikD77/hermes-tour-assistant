@@ -233,3 +233,15 @@ python3 skills/location-session-core/scripts/movementctl.py reset
 ```
 
 Rollout: (1) Unit- und synthetische Replay-Tests, (2) anonymisierter Offline-Replay, (3) produktiver Shadow Mode ohne Benachrichtigung, (4) manueller Aktivitätsvergleich, (5) Canary nur in interner Diagnose, (6) Entscheidungsnutzung erst in einem späteren Sprint.
+
+### Kanonische Geräteidentität konfigurieren
+
+Für Shadow-Mode-Aufrufer, die zwischen OwnTracks und Telegram wechseln, eine nicht-personenübergreifende Kennung konfigurieren:
+
+```bash
+HERMES_LOCATION_CANONICAL_DEVICE_ID=maik-iphone
+```
+
+Diese Kennung beim Aufbau beider Adapter als `canonical_device_id` übergeben. Je physischem Gerät eine andere Kennung verwenden; niemals mehrere Personen oder Geräte auf denselben Wert abbilden. Ohne diese explizite Abbildung bleiben die bisherigen quellspezifischen Gerätekennungen erhalten und die Movement Engine lehnt einen Streamwechsel als anderes Gerät typisiert ab.
+
+Movement-State-Schema 2 ergänzt einen konstant großen Segmentakkumulator. Schema 0/1 wird deterministisch migriert, sofern der alte aktive State noch einen Ursprung im begrenzten Puffer enthält; andernfalls wird er wie anderer beschädigter State quarantänisiert statt mit erfundenen Koordinaten fortgeführt.

@@ -300,3 +300,11 @@ flowchart TD
 ```
 
 Die Engine ist in Sprint 2 nicht an Versand- oder Gate-Entscheidungen angeschlossen. `movementctl.py status|diagnose|replay|reset` bietet koordinatenfreie Diagnose; Replay akzeptiert nur Dateien mit `synthetic: true`. Details: [ADR 0002](docs/adr/0002-movement-from-canonical-observations.md).
+
+### Präzisierungen aus dem Sprint-2-Review
+
+Aktive Segmente verwenden einen konstant großen privaten Akkumulator für Startpunkt, ungerundete Gesamtdistanz, Maximalgeschwindigkeit und zirkuläre Heading-Summen. Damit bleiben Segmentmetriken nach Ringpufferrotation und State-Neuladen korrekt; der Diagnose-Output gibt den privaten Startpunkt niemals aus. Der `recent`-Puffer bleibt auf `buffer_size` begrenzt.
+
+Die Geschwindigkeitsbereiche sind disjunkt: `stationary <= 0,7 m/s`, `walking <= 2,6 m/s`, `cycling < 10,0 m/s` und `automotive >= 10,0 m/s`. Deshalb müssen `HERMES_MOVEMENT_CYCLING_MAX_MPS` und `HERMES_MOVEMENT_AUTOMOTIVE_MIN_MPS` denselben Übergangswert besitzen. Stationär wird erst nach der vollständigen `stationary_min_seconds`-Dauer innerhalb des Radius bestätigt.
+
+Für einen quellenübergreifenden Stream muss beim Erzeugen sowohl des OwnTracks- als auch des Telegram-Adapters derselbe explizite `canonical_device_id` (z. B. aus `HERMES_LOCATION_CANONICAL_DEVICE_ID=maik-iphone`) übergeben werden. Event- beziehungsweise Message-IDs verbleiben in `source_metadata`; ohne explizite Zuordnung werden Geräte nicht implizit vermischt.

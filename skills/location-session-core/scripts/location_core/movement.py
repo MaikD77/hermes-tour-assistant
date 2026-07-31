@@ -73,7 +73,7 @@ class MovementConfig:
     start_distance_m: float = 20.0
     start_min_seconds: float = 20.0
     walk_max_mps: float = 2.6
-    cycling_max_mps: float = 12.0
+    cycling_max_mps: float = 10.0
     automotive_min_mps: float = 10.0
     heading_change_deg: float = 45.0
     short_gap_seconds: float = 180.0
@@ -97,8 +97,8 @@ class MovementConfig:
             raise ValueError("movement thresholds must be finite and positive")
         if not (self.stationary_max_mps < self.walk_max_mps < self.cycling_max_mps):
             raise ValueError("speed thresholds must increase from stationary to cycling")
-        if not self.walk_max_mps < self.automotive_min_mps <= self.cycling_max_mps:
-            raise ValueError("automotive threshold must overlap the upper cycling band")
+        if self.cycling_max_mps != self.automotive_min_mps:
+            raise ValueError("cycling maximum must equal automotive minimum")
         if not self.long_gap_seconds > self.short_gap_seconds:
             raise ValueError("long gap must exceed short gap")
         if self.max_plausible_mps <= self.automotive_min_mps:
@@ -207,16 +207,35 @@ class ObservationFeature:
         return f"ObservationFeature(id={self.observation_id!r}, quality={self.quality.value!r})"
 
 
+@dataclass(frozen=True, repr=False)
+class SegmentAccumulator:
+    """Private constant-size aggregates required beyond the recent ring buffer."""
+
+    start_latitude: float
+    start_longitude: float
+    distance_m: float = 0.0
+    maximum_speed_mps: float = 0.0
+    heading_x_sum: float = 0.0
+    heading_y_sum: float = 0.0
+    heading_count: int = 0
+
+    def __repr__(self) -> str:
+        return f"SegmentAccumulator(headings={self.heading_count})"
+
+
 @dataclass(frozen=True)
 class EngineState:
-    schema_version: int = 1
+    schema_version: int = 2
     movement: MovementState | None = None
     active_segment: MovementSegment | None = None
+    segment_accumulator: SegmentAccumulator | None = None
     recent: tuple[ObservationFeature, ...] = ()
     seen_ids: tuple[str, ...] = ()
     pending_mode: MovementMode | None = None
     pending_since: datetime | None = None
     pending_count: int = 0
+    pending_origin_latitude: float | None = None
+    pending_origin_longitude: float | None = None
     last_transition_at: datetime | None = None
     last_status: ProcessingStatus | None = None
 
@@ -328,22 +347,35 @@ class MovementEngine:
             candidate, reasons = MovementMode.UNKNOWN, reasons + ["first observation"]
         current = state.movement.mode if state.movement else MovementMode.UNKNOWN
         pending_mode, pending_since, pending_count = state.pending_mode, state.pending_since, state.pending_count
+        pending_lat, pending_lon = state.pending_origin_latitude, state.pending_origin_longitude
         transitioned = False
         if candidate == current:
-            pending_mode, pending_since, pending_count = None, None, 0
+            pending_mode, pending_since, pending_count, pending_lat, pending_lon = None, None, 0, None, None
         elif candidate == pending_mode:
-            pending_count += 1
+            if (candidate is MovementMode.STATIONARY and pending_lat is not None
+                    and pending_lon is not None
+                    and haversine_m(pending_lat, pending_lon,
+                                    observation.latitude, observation.longitude)
+                    > self.config.stationary_radius_m):
+                pending_since, pending_count = observation.observed_at, 1
+                pending_lat, pending_lon = observation.latitude, observation.longitude
+            else:
+                pending_count += 1
         else:
             pending_mode, pending_since, pending_count = candidate, observation.observed_at, 1
+            pending_lat, pending_lon = observation.latitude, observation.longitude
         pending_duration = ((observation.observed_at - pending_since).total_seconds()
                             if pending_since else 0.0)
         cooldown_ok = (state.last_transition_at is None or
                        (observation.observed_at - state.last_transition_at).total_seconds() >= self.config.cooldown_seconds)
+        required_duration = (self.config.stationary_min_seconds
+                             if candidate is MovementMode.STATIONARY
+                             else self.config.transition_min_seconds)
         if (quality not in {DataQuality.POOR, DataQuality.INVALID}
                 and pending_count >= self.config.transition_observations
-                and pending_duration >= self.config.transition_min_seconds and cooldown_ok):
+                and pending_duration >= required_duration and cooldown_ok):
             current, transitioned = candidate, True
-            pending_mode, pending_since, pending_count = None, None, 0
+            pending_mode, pending_since, pending_count, pending_lat, pending_lon = None, None, 0, None, None
         evidence = tuple(reasons + [f"candidate={candidate.value}", f"speed_band={round(speed, 2)}mps"])
         old_movement = state.movement
         confidence = _bounded((old_movement.confidence + 0.12) if old_movement and current == old_movement.mode else (0.65 if transitioned else 0.3))
@@ -363,6 +395,7 @@ class MovementEngine:
         events: list[MovementEvent] = []
         completed: MovementSegment | None = None
         segment = state.active_segment
+        accumulator = state.segment_accumulator
         if gap:
             decision = "complete_segment" if gap >= self.config.long_gap_seconds else "continue_uncertain"
             events.append(self._event(MovementEventType.DATA_GAP, observation, current, current,
@@ -376,6 +409,7 @@ class MovementEngine:
                                           segment.mode, segment.mode, segment.confidence,
                                           ("long data gap",), segment.segment_id))
                 segment = None
+                accumulator = None
         moving = current in {MovementMode.WALKING, MovementMode.CYCLING, MovementMode.AUTOMOTIVE}
         old_moving = old_movement is not None and old_movement.mode in {MovementMode.WALKING, MovementMode.CYCLING, MovementMode.AUTOMOTIVE}
         if transitioned:
@@ -393,6 +427,7 @@ class MovementEngine:
                                           segment.mode, current, confidence,
                                           ("confirmed state transition",), segment.segment_id))
                 segment = None
+                accumulator = None
         if moving:
             if segment is None:
                 sid = _digest("movseg", observation.device_id, current.value,
@@ -402,21 +437,43 @@ class MovementEngine:
                                           observation.observation_id, 1, 0, 0, 0, speed, speed,
                                           heading, 1.0 if heading is not None else 0.0,
                                           confidence, quality, 1 if gap else 0)
+                x = math.cos(math.radians(heading)) if heading is not None else 0.0
+                y = math.sin(math.radians(heading)) if heading is not None else 0.0
+                accumulator = SegmentAccumulator(
+                    observation.latitude, observation.longitude, 0.0, speed,
+                    x, y, 1 if heading is not None else 0,
+                )
                 events.append(self._event(MovementEventType.SEGMENT_STARTED, observation,
                                           current, current, confidence, evidence, sid))
             elif previous:
-                headings = [f.heading_deg for f in recent if f.heading_deg is not None]
-                dominant, stability = _mean_heading(headings)
+                if accumulator is None:
+                    raise ValueError("active segment requires segment accumulator")
+                x_sum = accumulator.heading_x_sum
+                y_sum = accumulator.heading_y_sum
+                heading_count = accumulator.heading_count
+                if heading is not None:
+                    x_sum += math.cos(math.radians(heading))
+                    y_sum += math.sin(math.radians(heading))
+                    heading_count += 1
+                total_distance = accumulator.distance_m + distance
+                maximum_speed = max(accumulator.maximum_speed_mps, speed)
+                accumulator = replace(accumulator, distance_m=total_distance,
+                                      maximum_speed_mps=maximum_speed, heading_x_sum=x_sum,
+                                      heading_y_sum=y_sum, heading_count=heading_count)
+                stability = (_bounded(math.hypot(x_sum, y_sum) / heading_count)
+                             if heading_count else 0.0)
+                dominant = ((math.degrees(math.atan2(y_sum, x_sum)) + 360) % 360
+                            if heading_count else None)
                 duration = (observation.observed_at - segment.started_at).total_seconds()
                 segment = replace(segment, end_observation_id=observation.observation_id,
                                   observation_count=segment.observation_count + 1,
                                   duration_seconds=round(duration, 1),
-                                  distance_m=round(segment.distance_m + distance, 1),
-                                  displacement_m=round(haversine_m(recent[-segment.observation_count - 1].latitude,
-                                                                  recent[-segment.observation_count - 1].longitude,
+                                  distance_m=round(total_distance, 1),
+                                  displacement_m=round(haversine_m(accumulator.start_latitude,
+                                                                  accumulator.start_longitude,
                                                                   observation.latitude, observation.longitude), 1),
-                                  average_speed_mps=round((segment.distance_m + distance) / max(1, duration), 3),
-                                  maximum_speed_mps=round(max(segment.maximum_speed_mps, speed), 3),
+                                  average_speed_mps=round(total_distance / max(1, duration), 3),
+                                  maximum_speed_mps=round(maximum_speed, 3),
                                   dominant_heading_deg=None if dominant is None else round(dominant, 1),
                                   heading_stability=stability, confidence=confidence,
                                   data_quality=quality, gap_count=segment.gap_count + (1 if gap else 0))
@@ -431,8 +488,10 @@ class MovementEngine:
                                               current, current, confidence,
                                               ("stable significant heading change",), segment.segment_id))
         status = ProcessingStatus.GAP_DETECTED if gap else (ProcessingStatus.INSUFFICIENT_EVIDENCE if current is MovementMode.UNKNOWN else ProcessingStatus.ACCEPTED)
-        new_state = EngineState(1, movement, segment, recent, seen, pending_mode, pending_since,
-                                pending_count, observation.observed_at if transitioned else state.last_transition_at,
+        new_state = EngineState(2, movement, segment, accumulator, recent, seen,
+                                pending_mode, pending_since, pending_count,
+                                pending_lat, pending_lon,
+                                observation.observed_at if transitioned else state.last_transition_at,
                                 status)
         self.state = new_state
         return MovementResult(new_state, tuple(events), segment, completed, status, quality,
@@ -448,6 +507,8 @@ class MovementEngine:
             return MovementMode.UNKNOWN
         if speed <= self.config.walk_max_mps:
             return MovementMode.WALKING
-        if speed < self.config.automotive_min_mps:
+        if speed < self.config.cycling_max_mps:
             return MovementMode.CYCLING
-        return MovementMode.AUTOMOTIVE
+        if speed >= self.config.automotive_min_mps:
+            return MovementMode.AUTOMOTIVE
+        return MovementMode.UNKNOWN

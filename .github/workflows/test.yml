@@ -31,7 +31,7 @@ jobs:
 
       - name: Lint skills and tests
         if: matrix.python-version == '3.11'
-        run: ruff check skills tests
+        run: ruff check skills services tests
 
       - name: Type-check canonical runtime
         if: matrix.python-version == '3.11'
@@ -40,6 +40,7 @@ jobs:
           skills/location-session-core/scripts
           skills/outdoor-tour-assistant/scripts
           skills/city-walk-guide/scripts
+          services/owntracks-receiver
 
       - name: Run tests with coverage
         run: pytest --cov --cov-report=term-missing --cov-fail-under=85
@@ -47,3 +48,7 @@ jobs:
       - name: Verify build metadata
         if: matrix.python-version == '3.11'
         run: python -m build
+
+      - name: Verify patch whitespace
+        if: matrix.python-version == '3.11'
+        run: git diff --check origin/${{ github.base_ref || 'main' }}...HEAD

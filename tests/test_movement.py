@@ -12,6 +12,7 @@ from location_core.movement import (
     angular_difference,
     bearing_deg,
 )
+from location_core.movement_state import MovementStateRepository
 
 BASE = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -29,6 +30,7 @@ def observation(index: int, *, lat: float = 52.0, lon: float = 13.0,
 def engine() -> MovementEngine:
     return MovementEngine(MovementConfig(transition_observations=2,
                                          transition_min_seconds=20,
+                                         stationary_min_seconds=20,
                                          cooldown_seconds=1))
 
 
@@ -110,3 +112,123 @@ def test_configuration_validation(monkeypatch: pytest.MonkeyPatch) -> None:
         MovementConfig(walk_max_mps=20)
     with pytest.raises(ValueError, match="numeric"):
         MovementConfig.from_env({"HERMES_MOVEMENT_WALK_MAX_MPS": "fast"})
+
+
+def test_segment_metrics_survive_500_observations_and_buffer_rotation() -> None:
+    config = MovementConfig(transition_observations=2, transition_min_seconds=20,
+                            cooldown_seconds=1, buffer_size=8)
+    movement = MovementEngine(config)
+    step = 0.00002
+    for index in range(500):
+        result = movement.process(observation(index, lon=13 + index * step,
+                                              speed=1.5, course=90))
+    segment = result.segment
+    assert segment is not None
+    assert len(result.state.recent) == config.buffer_size
+    assert segment.observation_count == 498
+    expected_displacement = 497 * step * 68_000
+    assert segment.displacement_m == pytest.approx(expected_displacement, rel=0.02)
+    assert segment.distance_m == pytest.approx(segment.displacement_m, rel=0.01)
+    assert segment.average_speed_mps == pytest.approx(
+        segment.distance_m / segment.duration_seconds, abs=0.001
+    )
+    assert segment.maximum_speed_mps >= segment.average_speed_mps
+    assert segment.dominant_heading_deg == pytest.approx(90, abs=0.1)
+    assert segment.heading_stability == pytest.approx(1)
+
+
+def test_segment_accumulator_survives_persistence(tmp_path) -> None:
+    config = MovementConfig(transition_observations=2, transition_min_seconds=20,
+                            cooldown_seconds=1, buffer_size=5)
+    movement = MovementEngine(config)
+    step = 0.00002
+    for index in range(250):
+        movement.process(observation(index, lon=13 + index * step,
+                                     speed=1.5, course=90))
+    repository = MovementStateRepository(tmp_path)
+    repository.save(movement.state)
+    restored = MovementEngine(config, repository.load())
+    for index in range(250, 500):
+        result = restored.process(observation(index, lon=13 + index * step,
+                                              speed=1.5, course=90))
+    assert result.segment is not None
+    assert result.segment.observation_count == 498
+    assert result.segment.displacement_m == pytest.approx(497 * step * 68_000, rel=0.02)
+    assert result.state.segment_accumulator is not None
+    assert "13." not in repr(result.state.segment_accumulator)
+
+
+@pytest.mark.parametrize("sources", [("owntracks", "telegram"),
+                                     ("telegram", "owntracks")])
+def test_source_switch_keeps_active_segment(sources: tuple[str, str]) -> None:
+    movement = engine()
+    for index in range(3):
+        result = movement.process(observation(index, lon=13 + index * 0.0005,
+                                              speed=5, source=sources[0]))
+    assert result.segment is not None
+    segment_id = result.segment.segment_id
+    switched = movement.process(observation(3, lon=13.0015, speed=5, source=sources[1]))
+    assert switched.segment is not None
+    assert switched.segment.segment_id == segment_id
+    assert switched.segment.observation_count == result.segment.observation_count + 1
+    assert movement.process(observation(3, lon=13.0015, speed=5,
+                                        source=sources[1])).status is ProcessingStatus.DUPLICATE
+    assert movement.process(observation(4, lon=13.002, speed=5,
+                                        source=sources[1], device="other")).status is ProcessingStatus.INVALID
+
+
+def test_stationary_requires_full_minimum_duration() -> None:
+    config = MovementConfig(stationary_min_seconds=90, transition_observations=2,
+                            transition_min_seconds=10, cooldown_seconds=1)
+    movement = MovementEngine(config)
+    movement.process(observation(0, speed=0))
+    movement.process(observation(1, speed=0))
+    before = movement.process(observation(3, speed=0, seconds=119))
+    assert before.state.movement is not None
+    assert before.state.movement.mode is MovementMode.UNKNOWN
+    exact = movement.process(observation(4, speed=0, seconds=120))
+    assert exact.state.movement is not None
+    assert exact.state.movement.mode is MovementMode.STATIONARY
+
+
+def test_stationary_radius_resets_on_drift_outside_radius() -> None:
+    config = MovementConfig(stationary_min_seconds=60, transition_observations=2,
+                            transition_min_seconds=10, cooldown_seconds=1)
+    movement = MovementEngine(config)
+    movement.process(observation(0, speed=0))
+    movement.process(observation(1, lon=13.00005, speed=0))  # inside radius
+    movement.process(observation(2, lon=13.0003, speed=0))  # outside pending radius
+    result = movement.process(observation(4, lon=13.0003, speed=0, seconds=119))
+    assert result.state.movement is not None
+    assert result.state.movement.mode is MovementMode.UNKNOWN
+    confirmed = movement.process(observation(6, lon=13.0003, speed=0, seconds=179))
+    assert confirmed.state.movement is not None
+    assert confirmed.state.movement.mode is MovementMode.STATIONARY
+
+
+def test_traffic_light_stop_does_not_complete_cycling_segment() -> None:
+    config = MovementConfig(stationary_min_seconds=90, transition_observations=2,
+                            transition_min_seconds=20, cooldown_seconds=1)
+    movement = MovementEngine(config)
+    for index in range(3):
+        moving = movement.process(observation(index, lon=13 + index * 0.0005, speed=5))
+    assert moving.segment is not None
+    segment_id = moving.segment.segment_id
+    movement.process(observation(3, lon=13.001, speed=0))
+    stopped_briefly = movement.process(observation(4, lon=13.001, speed=0))
+    assert stopped_briefly.segment is not None
+    assert stopped_briefly.segment.segment_id == segment_id
+    assert stopped_briefly.completed_segment is None
+
+
+@pytest.mark.parametrize(("speed", "expected"), [
+    (0.699, MovementMode.STATIONARY), (0.7, MovementMode.STATIONARY),
+    (0.701, MovementMode.WALKING), (2.599, MovementMode.WALKING),
+    (2.6, MovementMode.WALKING), (2.601, MovementMode.CYCLING),
+    (9.999, MovementMode.CYCLING), (10.0, MovementMode.AUTOMOTIVE),
+    (10.001, MovementMode.AUTOMOTIVE),
+])
+def test_speed_threshold_boundaries(speed: float, expected: MovementMode) -> None:
+    config = MovementConfig()
+    distance = 0 if expected is MovementMode.STATIONARY else 100
+    assert MovementEngine(config)._classify(speed, distance, 30, DataQuality.GOOD) is expected

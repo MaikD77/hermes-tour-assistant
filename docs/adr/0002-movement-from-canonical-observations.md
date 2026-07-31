@@ -45,3 +45,11 @@ Movement state begins at schema 1; schema 0 is deterministically promoted. It is
 ## Deliberately deferred
 
 Known places, home/work, clustering, routines, mobility profiles, prediction, calendar/Gmail, directional weather, POIs, notifications, UI, health data, machine learning, vector storage and all new transport modes are outside this decision.
+
+## Review amendments
+
+Segment aggregation is independent from the bounded recent-observation ring: schema 2 persists one private start coordinate plus unrounded distance, maximum-speed and circular-heading accumulators. This is constant-size state, not a route history, and it is excluded from diagnostics. Schema 0/1 migration reconstructs the accumulator only from an available bounded legacy origin; an impossible active-state migration is quarantined.
+
+Speed bands are deliberately disjoint: walking includes its maximum, cycling ends exclusively at `cycling_max_mps`, and automotive starts inclusively at the identical `automotive_min_mps`. Structural validation requires both boundary values to match. Stationary transitions additionally require the complete stationary duration around a pending radius anchor.
+
+Source adapters accept an explicit canonical device ID. Deployments may map OwnTracks and Telegram to the same value only for the same physical device. Source event/message IDs remain allowlisted metadata and never establish device identity. No implicit cross-person or cross-device mapping is performed.

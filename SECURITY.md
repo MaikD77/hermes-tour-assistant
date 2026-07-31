@@ -88,3 +88,5 @@ Standortantworten und Snapshots gelten als nicht vertrauenswürdig und werden st
 ## Movement-Datenschutzgrenze
 
 Die Movement Engine arbeitet offline, ruft weder Provider noch LLM auf und sendet keine Nachrichten. Status und Diagnose enthalten keine Koordinaten oder Rohpayloads. Der private State enthält nur einen begrenzten Puffer normalisierter, für Segmentmetriken benötigter Merkmale; es entsteht keine unbegrenzte Route oder Personenbewertung. Deterministische IDs sind fachliche Deduplizierungsschlüssel. Symlinks werden abgewiesen, Writes sind atomar und gesperrt, beschädigte Dateien werden nicht überschrieben. Movement Confidence ist technische Klassifikationssicherheit, keine Aussage über den Nutzer.
+
+Die kanonische Geräte-ID ist eine explizite lokale Konfiguration, keine globale Personen-ID. Unterschiedliche Geräte oder Personen dürfen nicht dieselbe Kennung erhalten. Der private Segmentakkumulator hält genau einen Segmentstartpunkt und konstante Aggregatwerte, keine Koordinatenchronik; weder seine Koordinaten noch präzise Pending-Anker werden von `status` oder `diagnose` ausgegeben.
