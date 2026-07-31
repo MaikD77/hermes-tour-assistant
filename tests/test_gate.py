@@ -9,6 +9,8 @@ def configure_paths(gate_module, monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(gate_module, "STATE", tmp_path / "live_tour_assistant.json")
     monkeypatch.setattr(gate_module, "CHAT_ID", "12345")
     monkeypatch.setattr(gate_module, "MAX_LOCATION_AGE_SECONDS", 300.0)
+    # Prevent OwnTracks fallback from picking up a local receiver during tests
+    monkeypatch.setattr(gate_module, "fetch_owntracks_location", lambda *a, **kw: None)
 
 
 def set_non_lunch_local_time(gate_module, monkeypatch) -> None:
@@ -107,7 +109,7 @@ def test_wakes_when_due(gate_module, monkeypatch, tmp_path, capsys) -> None:
     assert output["context"]["reason"] == "check_in"
 
 
-def test_stale_location_reports_once(
+def test_stale_location_silently_ends_session(
     gate_module, monkeypatch, tmp_path, capsys
 ) -> None:
     configure_paths(gate_module, monkeypatch, tmp_path)
@@ -118,7 +120,9 @@ def test_stale_location_reports_once(
     gate_module.main(now=1_000_060.0)
     second = read_output(capsys)
 
-    assert first["context"]["error_code"] == "invalid_or_stale_location"
+    # With OwnTracks fallback, stale Telegram locations are silently ignored
+    # (SnapshotError caught, OwnTracks tried, both empty → session ends silently)
+    assert first == {"wakeAgent": False}
     assert second == {"wakeAgent": False}
 
 

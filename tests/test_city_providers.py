@@ -51,7 +51,8 @@ def test_openrouteservice_adapter_normalizes_geojson(monkeypatch) -> None:
     assert captured["request"].get_header("Authorization") == "secret"
     body = json.loads(captured["request"].data)
     assert body["coordinates"][0] == [11.5, 48.1]
-    assert "quiet" in body["options"]["profile_params"]["weightings"]
+    assert body["preference"] == "recommended"
+    assert "instructions" in body
 
 
 @pytest.mark.parametrize(

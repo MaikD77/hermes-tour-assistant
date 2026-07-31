@@ -1,7 +1,7 @@
 ---
 name: city-walk-guide
 description: "Personal, source-backed walking tours from a Telegram live location, with compact German stories and Hermes voice replies."
-version: 1.4.0
+version: 1.4.1
 author: MaikD77
 license: MIT
 platforms: [linux, macos]

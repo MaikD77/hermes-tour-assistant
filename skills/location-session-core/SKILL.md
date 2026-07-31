@@ -1,7 +1,7 @@
 ---
 name: location-session-core
 description: "Internal shared runtime for validated live locations, private state, route geometry, provider health, and safe location-aware output. Load through a user-facing skill."
-version: 1.4.0
+version: 1.4.1
 author: MaikD77
 license: MIT
 platforms: [linux, macos]
