@@ -129,43 +129,24 @@ Siedlungen und lösen keinen `town_approach` aus.
 
 ## Repository-Struktur
 
-```text
+```
 hermes-tour-assistant/
 ├── README.md
 ├── INSTALLATION.md
 ├── SECURITY.md
 ├── pyproject.toml
+├── .gitignore
 ├── skills/
-│   ├── outdoor-tour-assistant/
-│   │   ├── SKILL.md
-│   │   ├── scripts/
-│   │   │   ├── contracts.py
-│   │   │   ├── live_tour_gate.py
-│   │   │   ├── tour_state.py
-│   │   │   ├── route_engine.py
-│   │   │   ├── event_engine.py
-│   │   │   ├── providers.py
-│   │   │   ├── tour_runtime.py
-│   │   │   ├── tourctl.py
-│   │   │   └── prepare_tour.py
-│   │   └── references/
-│   ├── city-walk-guide/
-│   │   ├── SKILL.md
-│   │   ├── scripts/
-│   │   │   ├── city_contracts.py
-│   │   │   ├── city_planner.py
-│   │   │   ├── city_runtime.py
-│   │   │   ├── city_state.py
-│   │   │   ├── cityctl.py
-│   │   │   └── live_city_gate.py
-│   │   └── references/
-│   ├── location-session-core/
-│   │   ├── SKILL.md
-│   │   └── scripts/location_core/
-│   └── live-location-nearby/
-│       ├── SKILL.md
-│       └── scripts/find_water.py
-└── tests/
+│ ├── outdoor-tour-assistant/
+│ ├── city-walk-guide/
+│ ├── location-session-core/
+│ └── live-location-nearby/
+├── services/
+│ └── owntracks-receiver/     # Optionaler Standort-Infrastruktur-Service
+├── scripts/
+│ ├── tour-assistant-update.sh # Deployment- und Update-Skript
+│ └── owntracks-start.sh       # OwnTracks-Receiver-Startskript
+└── tests/`
 ```
 
 Jeder nutzerseitige Skill besitzt genau einen kanonischen Ordner. Der interne
@@ -207,8 +188,24 @@ export OPENROUTESERVICE_API_KEY="DEIN_ORS_SCHLUESSEL"
 
 Das Gate muss jede Minute gestartet werden:
 
-```text
-~/.hermes/skills/outdoor-tour-assistant/scripts/live_tour_gate.py
+```bash
+# Direkter Aufruf des Skill-Gates:
+python3 ~/.hermes/skills/outdoor-tour-assistant/scripts/live_tour_gate.py
+
+# Oder via Wrapper (für Cron mit Umgebungsvariablen):
+python3 ~/.hermes/scripts/live_tour_gate.py
+```
+
+Das Deployment erfolgt über das Update-Skript im Repository:
+
+```bash
+bash scripts/tour-assistant-update.sh
+```
+
+Für die OwnTracks-Standortquelle muss der Receiver gestartet werden:
+
+```bash
+bash scripts/owntracks-start.sh
 ```
 
 Der vollständige Cronjob, Betriebsbefehle und Rollout stehen in

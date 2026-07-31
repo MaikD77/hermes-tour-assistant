@@ -25,6 +25,9 @@ Version ersetzt oder über den Hermes-Skill-Installer aktualisiert werden.
 `location-session-core` ist ein interner Support-Skill: Er wird nicht direkt
 aufgerufen, muss aber neben den nutzerseitigen Skills installiert sein.
 
+Das bereitgestellte `scripts/tour-assistant-update.sh` automatisiert den
+Update-Vorgang inklusive Skill-Backup und Gate-Wrapper-Erstellung.
+
 ## Service-Umgebung
 
 ```bash
@@ -32,6 +35,7 @@ export HERMES_TOUR_CHAT_ID="DEINE_TELEGRAM_CHAT_ID"
 export HERMES_TOUR_ACTIVITY="cycling"  # cycling oder walking
 export HERMES_TOUR_LOCALE="de-DE"
 export HERMES_TOUR_LOCATION_MAX_AGE_SECONDS="300"
+export HERMES_OWNTRACKS_URL="http://127.0.0.1:9090/location"  # OwnTracks-Fallback
 ```
 
 Optional kann `HERMES_TOUR_STATE_DIR` den privaten State-Pfad überschreiben.
@@ -72,6 +76,36 @@ prompt: |
 
 Die vollständige Minimalaufgabe liegt unter
 `references/cron-prompt.md` im installierten Skill.
+
+### OwnTracks Receiver (alternative Standortquelle)
+
+Zusätzlich zur Telegram-Live-Location kann der Outdoor-Assistent OwnTracks als
+Standortquelle nutzen. Der Receiver wird als separater Service betrieben:
+
+```bash
+# Abhängigkeiten installieren
+pip install -r services/owntracks-receiver/requirements.txt
+
+# API-Key generieren
+openssl rand -hex 32 > ~/.hermes/owntracks/.api_key
+
+# Receiver starten (über das bereitgestellte Skript)
+bash scripts/owntracks-start.sh
+```
+
+Umgebung für den Receiver:
+
+```bash
+export OWNTRACKS_PORT=9090
+export OWNTRACKS_STALE_SECONDS=300
+export OWNTRACKS_RATE_LIMIT=10
+export OWNTRACKS_MAX_BODY=4096
+```
+
+Der Gate-Wrapper (`live_tour_gate.py`) fragt zunächst die Telegram-Live-Location
+ab und fällt bei fehlender Aktualität auf OwnTracks (`GET /location` auf
+`localhost:9090`) zurück. Weitere Details in
+`services/owntracks-receiver/README.md`.
 
 ### City Walk Guide
 
