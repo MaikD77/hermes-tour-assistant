@@ -281,3 +281,7 @@ flowchart LR
 ```
 
 Der Resolver fragt Quellen strikt nacheinander ab; die erste gültige und aktuelle Beobachtung gewinnt. Diagnosen enthalten nur Quellname und Zustand (`not_available`, `stale`, `invalid`, `unreachable`), niemals genaue Koordinaten.
+
+### Beobachtungsidentität und Zeitmodell
+
+`observation_id` ist eine reproduzierbare, koordinatenfreie SHA-256-Kennung über kanonisch serialisierte Identitätsfelder einer einzelnen Quellenbeobachtung. Sie ist keine Personen-, Sitzungs- oder Ortskennung. `observed_at` und `received_at` sind intern ausschließlich timezone-aware UTC-`datetime`-Werte. Quellspezifische Metadaten werden nach Adapter-Allowlist als sortiertes, unveränderliches Tuple gespeichert; Rohpayloads, Koordinatenkopien, Secrets und Credential-URLs sind unzulässig. Die Architekturentscheidung und Migrationsfolgen stehen in [ADR 0001](docs/adr/0001-location-sources-are-adapters.md).

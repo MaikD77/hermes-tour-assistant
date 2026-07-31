@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -101,7 +102,7 @@ def fetch_owntracks_location(
 ) -> LocationObservation | None:
     """Compatibility wrapper around the source-neutral OwnTracks adapter."""
     return OwnTracksLocationSource(HttpOwnTracksReceiver(url)).latest(
-        now=now, max_age_seconds=max_age_seconds
+        now=datetime.fromtimestamp(now, UTC), max_age_seconds=max_age_seconds
     ).observation
 
 
@@ -162,7 +163,8 @@ def main(now: float | None = None) -> None:
             order,
         )
         sample = resolver.resolve(
-            now=current_time, max_age_seconds=MAX_LOCATION_AGE_SECONDS
+            now=datetime.fromtimestamp(current_time, UTC),
+            max_age_seconds=MAX_LOCATION_AGE_SECONDS,
         ).observation
     except ValueError:
         _operational_error(runtime, "invalid_location_source_order", current_time)

@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -131,7 +132,8 @@ def main(now: float | None = None) -> None:
             parse_source_order(LOCATION_SOURCE_ORDER),
         )
         sample = resolver.resolve(
-            now=current_time, max_age_seconds=MAX_LOCATION_AGE_SECONDS
+            now=datetime.fromtimestamp(current_time, UTC),
+            max_age_seconds=MAX_LOCATION_AGE_SECONDS,
         ).observation
     except ValueError:
         _operational_error(runtime, "invalid_location_source_order", current_time)

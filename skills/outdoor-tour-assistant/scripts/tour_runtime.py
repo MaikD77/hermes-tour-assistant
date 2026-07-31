@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,10 @@ from event_engine import (  # noqa: E402
     mark_delivered,
     select_for_delivery,
     upsert_event,
+)
+from location_core.location_sources import (  # noqa: E402
+    adapt_legacy_sample,
+    observation_session_id,
 )
 from route_engine import (  # noqa: E402
     MAX_GPX_BYTES,
@@ -405,12 +410,12 @@ class TourRuntime:
         if not previous_position:
             return 0.0
         try:
-            elapsed = sample.observed_at - float(previous_position["observed_at"])
+            elapsed = sample.observed_at.timestamp() - float(previous_position["observed_at"])
             if elapsed <= 0:
                 return 0.0
             distance = haversine_m(
-                sample.lat,
-                sample.lon,
+                sample.latitude,
+                sample.longitude,
                 float(previous_position["lat"]),
                 float(previous_position["lon"]),
             )
@@ -422,19 +427,22 @@ class TourRuntime:
         return speed
 
     def evaluate_gate(self, sample: LocationObservation, *, now: float) -> GateDecision:
+        sample = adapt_legacy_sample(
+            sample, received_at=datetime.fromtimestamp(now, UTC)
+        )
         decision: list[GateDecision] = []
 
         def operation(state: dict[str, Any]) -> dict[str, Any]:
             previous_session_id = state["session"].get("id")
             new_share = (
-                previous_session_id != sample.session_id
+                previous_session_id != observation_session_id(sample)
                 or state["session"].get("status") == "inactive"
             )
             state = start_session(
                 state,
-                sample.session_id,
-                started_at=sample.observed_at,
-                expires_at=sample.expires_at,
+                observation_session_id(sample),
+                started_at=sample.observed_at.timestamp(),
+                expires_at=sample.observed_at.timestamp() + 300,
             )
             previous_position = state.get("position")
             schedule = state["schedule"]
@@ -449,8 +457,8 @@ class TourRuntime:
                 try:
                     route = parse_gpx(Path(state["route"]["gpx_path"]))
                     route_match = match_position(
-                        sample.lat,
-                        sample.lon,
+                        sample.latitude,
+                        sample.longitude,
                         route,
                         previous_segment_index=(previous_position or {}).get("segment_index"),
                         previous_progress_m=(previous_position or {}).get("progress_m"),
@@ -468,9 +476,9 @@ class TourRuntime:
                     route_error = True
 
             position: dict[str, Any] = {
-                "observed_at": sample.observed_at,
-                "lat": sample.lat,
-                "lon": sample.lon,
+                "observed_at": sample.observed_at.timestamp(),
+                "lat": sample.latitude,
+                "lon": sample.longitude,
             }
             if route_match:
                 position.update(asdict(route_match))
@@ -542,8 +550,8 @@ class TourRuntime:
                 moved_m = haversine_m(
                     float(last_wake_position["lat"]),
                     float(last_wake_position["lon"]),
-                    sample.lat,
-                    sample.lon,
+                    sample.latitude,
+                    sample.longitude,
                 )
             next_due_at = schedule.get("next_due_at")
             due = next_due_at is None or now >= float(next_due_at)
@@ -587,8 +595,8 @@ class TourRuntime:
                 )
                 schedule["last_trigger"] = reason
                 schedule["last_wake_position"] = {
-                    "lat": sample.lat,
-                    "lon": sample.lon,
+                    "lat": sample.latitude,
+                    "lon": sample.longitude,
                 }
                 if event_key:
                     schedule.setdefault("event_last_sent", {})[event_key] = now
@@ -613,7 +621,7 @@ class TourRuntime:
             decision.append(
                 GateDecision(
                     wake_agent=wake,
-                    session_id=sample.session_id if wake else None,
+                    session_id=observation_session_id(sample) if wake else None,
                     reason=reason,
                     cadence_minutes=cadence if wake else None,
                     flags=tuple(flags) if wake else (),
