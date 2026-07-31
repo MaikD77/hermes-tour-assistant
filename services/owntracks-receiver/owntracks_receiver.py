@@ -31,7 +31,6 @@ from typing import Any
 import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
-
 from models import LocationStore
 from validation import PayloadError, normalize_location, normalize_transition
 

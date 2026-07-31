@@ -18,9 +18,9 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 os.environ["OWNTRACKS_API_KEY"] = "test-key"
-from owntracks_receiver import app  # noqa: E402
 from models import Location, LocationStore  # noqa: E402
-from validation import normalize_location, PayloadError  # noqa: E402
+from owntracks_receiver import app  # noqa: E402
+from validation import PayloadError, normalize_location  # noqa: E402
 
 client = TestClient(app)
 

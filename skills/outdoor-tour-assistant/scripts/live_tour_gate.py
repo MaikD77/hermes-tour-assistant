@@ -115,7 +115,7 @@ def fetch_owntracks_location(url: str, now: float, max_age_seconds: float) -> Lo
         return None
     if stale or now - observed_at > max_age_seconds:
         return None
-    digest = hashlib.sha256(f"owntracks\x00maik\x00iphone".encode()).hexdigest()[:20]
+    digest = hashlib.sha256("owntracks\x00maik\x00iphone".encode()).hexdigest()[:20]
     return LocationSample(
         session_id=f"owntracks-{digest}",
         message_id="owntracks",
