@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,13 @@ if str(CORE_SCRIPTS) not in sys.path:
 from city_runtime import CityRuntime  # noqa: E402
 from city_state import CorruptStateError  # noqa: E402
 from location_core.contracts import GateDecision, LocationSample  # noqa: E402
+from location_core.location_sources import (  # noqa: E402
+    HttpOwnTracksReceiver,
+    LocationSourceResolver,
+    OwnTracksLocationSource,
+    TelegramLocationSource,
+    parse_source_order,
+)
 
 HERMES_HOME = Path(
     os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))
@@ -42,6 +50,8 @@ CHAT_ID = os.environ.get(
 MAX_LOCATION_AGE_SECONDS = float(
     os.environ.get("HERMES_CITY_GUIDE_LOCATION_MAX_AGE_SECONDS", "300")
 )
+OWNTRACKS_URL = os.environ.get("HERMES_OWNTRACKS_URL", "http://127.0.0.1:9090/location")
+LOCATION_SOURCE_ORDER = os.environ.get("HERMES_LOCATION_SOURCE_ORDER", "owntracks,telegram")
 
 
 class SnapshotError(RuntimeError):
@@ -114,14 +124,19 @@ def main(now: float | None = None) -> None:
         _operational_error(runtime, "invalid_location_max_age", current_time)
         return
     try:
-        sample = select_location(
-            read_snapshot(SNAPSHOT),
-            chat_id=CHAT_ID,
-            now=current_time,
-            max_age_seconds=MAX_LOCATION_AGE_SECONDS,
+        resolver = LocationSourceResolver(
+            {
+                "owntracks": OwnTracksLocationSource(HttpOwnTracksReceiver(OWNTRACKS_URL)),
+                "telegram": TelegramLocationSource(SNAPSHOT, CHAT_ID),
+            },
+            parse_source_order(LOCATION_SOURCE_ORDER),
         )
-    except SnapshotError as error:
-        _operational_error(runtime, str(error), current_time)
+        sample = resolver.resolve(
+            now=datetime.fromtimestamp(current_time, UTC),
+            max_age_seconds=MAX_LOCATION_AGE_SECONDS,
+        ).observation
+    except ValueError:
+        _operational_error(runtime, "invalid_location_source_order", current_time)
         return
     if sample is None:
         emit(GateDecision(wake_agent=False))

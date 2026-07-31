@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -33,8 +34,13 @@ from city_planner import (  # noqa: E402
 from city_state import StateRepository, empty_state  # noqa: E402
 from location_core.contracts import (  # noqa: E402
     GateDecision,
-    LocationSample,
+    LocationSample,  # noqa: F401 - compatibility export for callers
     RouteGeometry,
+)
+from location_core.location_sources import (  # noqa: E402
+    LocationObservation,
+    adapt_legacy_sample,
+    observation_session_id,
 )
 from location_core.output_safety import safe_label, safe_prose  # noqa: E402
 from location_core.providers import (  # noqa: E402
@@ -248,13 +254,16 @@ class CityRuntime:
 
     def plan_and_start(
         self,
-        sample: LocationSample,
+        sample: LocationObservation,
         request: GuideRequest,
         registry: ProviderRegistry,
         *,
         now: float | None = None,
     ) -> dict[str, Any]:
         timestamp = time.time() if now is None else now
+        sample = adapt_legacy_sample(
+            sample, received_at=datetime.fromtimestamp(timestamp, UTC)
+        )
         map_provider = registry.resolve(
             "map.nearby",
             _preferred_provider("map.nearby"),
@@ -287,7 +296,7 @@ class CityRuntime:
             "route.walking",
             _preferred_provider("route.walking"),
         )
-        planning_start = request.start or (sample.lat, sample.lon)
+        planning_start = request.start or (sample.latitude, sample.longitude)
         discovery_runner = ProviderRunner("city-discovery")
         route_runner = ProviderRunner("openrouteservice")
         optional_runners: dict[str, ProviderRunner] = {}
@@ -355,19 +364,19 @@ class CityRuntime:
         def operation(_: dict[str, Any]) -> dict[str, Any]:
             state = empty_state()
             state["session"] = {
-                "id": sample.session_id,
+                "id": observation_session_id(sample),
                 "status": "active",
                 "started_at": timestamp,
-                "expires_at": sample.expires_at,
+                "expires_at": sample.observed_at.timestamp() + 300,
                 "ended_at": None,
             }
             state["preferences"].update(request.to_dict())
             state["preferences"]["start"] = list(planning_start)
             state["itinerary"] = {"status": "ready", **itinerary.to_dict()}
             state["position"] = {
-                "observed_at": sample.observed_at,
-                "lat": sample.lat,
-                "lon": sample.lon,
+                "observed_at": sample.observed_at.timestamp(),
+                "lat": sample.latitude,
+                "lon": sample.longitude,
             }
             state["stories"] = stories
             provider_health.update(
@@ -392,11 +401,14 @@ class CityRuntime:
 
     def evaluate_gate(
         self,
-        sample: LocationSample,
+        sample: LocationObservation,
         *,
         now: float | None = None,
     ) -> GateDecision:
         timestamp = time.time() if now is None else now
+        sample = adapt_legacy_sample(
+            sample, received_at=datetime.fromtimestamp(timestamp, UTC)
+        )
         decisions: list[GateDecision] = []
 
         def operation(state: dict[str, Any]) -> dict[str, Any]:
@@ -405,7 +417,7 @@ class CityRuntime:
             if session["status"] in {"inactive", "completed", "failed"}:
                 decisions.append(GateDecision(wake_agent=False))
                 return state
-            if sample.session_id != session["id"]:
+            if observation_session_id(sample) != session["id"]:
                 decisions.append(
                     GateDecision(
                         wake_agent=True,
@@ -425,7 +437,7 @@ class CityRuntime:
                 decisions.append(GateDecision(wake_agent=False))
                 return state
             previous_observed_at = schedule.get("last_observed_at")
-            if previous_observed_at is not None and sample.observed_at <= float(
+            if previous_observed_at is not None and sample.observed_at.timestamp() <= float(
                 previous_observed_at
             ):
                 decisions.append(GateDecision(wake_agent=False))
@@ -433,20 +445,20 @@ class CityRuntime:
 
             route = _route_points(state["itinerary"]["route_points"])
             match = match_position(
-                sample.lat,
-                sample.lon,
+                sample.latitude,
+                sample.longitude,
                 route,
                 previous_segment_index=schedule.get("route_segment_index"),
                 previous_progress_m=schedule.get("route_progress_m"),
             )
             state["position"] = {
-                "observed_at": sample.observed_at,
-                "lat": sample.lat,
-                "lon": sample.lon,
+                "observed_at": sample.observed_at.timestamp(),
+                "lat": sample.latitude,
+                "lon": sample.longitude,
                 "route_offset_m": match.offset_m,
                 "route_progress_m": match.progress_m,
             }
-            schedule["last_observed_at"] = sample.observed_at
+            schedule["last_observed_at"] = sample.observed_at.timestamp()
             schedule["route_segment_index"] = match.segment_index
             schedule["route_progress_m"] = match.progress_m
 
@@ -466,8 +478,8 @@ class CityRuntime:
                 break
             if next_stop is not None:
                 distance = haversine_m(
-                    sample.lat,
-                    sample.lon,
+                    sample.latitude,
+                    sample.longitude,
                     float(next_stop["lat"]),
                     float(next_stop["lon"]),
                 )
@@ -514,8 +526,8 @@ class CityRuntime:
                     and len(finish_target) == 2
                     and match.remaining_m <= 150
                     and haversine_m(
-                        sample.lat,
-                        sample.lon,
+                        sample.latitude,
+                        sample.longitude,
                         float(finish_target[0]),
                         float(finish_target[1]),
                     )
@@ -670,13 +682,16 @@ class CityRuntime:
 
     def replan(
         self,
-        sample: LocationSample,
+        sample: LocationObservation,
         registry: ProviderRegistry,
         *,
         request_override: GuideRequest | None = None,
         now: float | None = None,
     ) -> dict[str, Any]:
         timestamp = time.time() if now is None else now
+        sample = adapt_legacy_sample(
+            sample, received_at=datetime.fromtimestamp(timestamp, UTC)
+        )
         state = self.repository.load()
         stored_request = request_override or GuideRequest.from_mapping(
             state["preferences"]
@@ -705,7 +720,7 @@ class CityRuntime:
         candidates = rank_stops(
             candidates,
             request=stored_request,
-            start=(sample.lat, sample.lon),
+            start=(sample.latitude, sample.longitude),
         )
         provider = registry.resolve(
             "route.walking",
@@ -713,7 +728,7 @@ class CityRuntime:
         )
         runner = ProviderRunner("openrouteservice")
         itinerary = build_itinerary(
-            start=(sample.lat, sample.lon),
+            start=(sample.latitude, sample.longitude),
             request=request,
             candidates=candidates,
             route_provider=_RunningRouteProvider(provider, runner, timestamp),
@@ -726,9 +741,9 @@ class CityRuntime:
             current["preferences"]["start"] = original_start
             current["itinerary"] = {"status": "ready", **itinerary.to_dict()}
             current["position"] = {
-                "observed_at": sample.observed_at,
-                "lat": sample.lat,
-                "lon": sample.lon,
+                "observed_at": sample.observed_at.timestamp(),
+                "lat": sample.latitude,
+                "lon": sample.longitude,
             }
             current["schedule"]["off_route_samples"] = 0
             current["schedule"]["route_segment_index"] = None

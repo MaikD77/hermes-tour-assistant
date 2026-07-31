@@ -3,14 +3,11 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import sys
 import time
-import urllib.error
-import urllib.request
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +16,18 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from contracts import GateDecision, LocationSample  # noqa: E402
+
+CORE_SCRIPTS = Path(__file__).resolve().parents[2] / "location-session-core" / "scripts"
+if str(CORE_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(CORE_SCRIPTS))
+from location_core.location_sources import (  # noqa: E402
+    HttpOwnTracksReceiver,
+    LocationObservation,
+    LocationSourceResolver,
+    OwnTracksLocationSource,
+    TelegramLocationSource,
+    parse_source_order,
+)
 from tour_runtime import TourProfile, TourRuntime  # noqa: E402
 from tour_state import CorruptStateError  # noqa: E402
 
@@ -37,6 +46,7 @@ MAX_LOCATION_AGE_SECONDS = float(
 OWNTRACKS_URL = os.environ.get(
     "HERMES_OWNTRACKS_URL", "http://127.0.0.1:9090/location"
 )
+LOCATION_SOURCE_ORDER = os.environ.get("HERMES_LOCATION_SOURCE_ORDER", "owntracks,telegram")
 
 
 class SnapshotError(RuntimeError):
@@ -87,44 +97,13 @@ def select_location(
     return max(valid, key=lambda sample: sample.observed_at)
 
 
-def fetch_owntracks_location(url: str, now: float, max_age_seconds: float) -> LocationSample | None:
-    """Fetch the latest location from the OwnTracks receiver."""
-    try:
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            body = json.loads(resp.read().decode())
-    except (OSError, json.JSONDecodeError, urllib.error.URLError):
-        return None
-    if not isinstance(body, dict) or body.get("result") != "ok":
-        return None
-    try:
-        lat = float(body["latitude"])
-        lon = float(body["longitude"])
-        observed_str = body.get("observed_at", "")
-        stale = body.get("stale", True)
-    except (KeyError, TypeError, ValueError):
-        return None
-    if not isinstance(observed_str, str) or not observed_str:
-        return None
-    try:
-        observed_at = (
-            datetime.fromisoformat(observed_str.replace("Z", "+00:00"))
-            .timestamp()
-        )
-    except (ValueError, TypeError):
-        return None
-    if stale or now - observed_at > max_age_seconds:
-        return None
-    digest = hashlib.sha256("owntracks\x00maik\x00iphone".encode()).hexdigest()[:20]
-    return LocationSample(
-        session_id=f"owntracks-{digest}",
-        message_id="owntracks",
-        observed_at=observed_at,
-        expires_at=observed_at + max_age_seconds,
-        lat=lat,
-        lon=lon,
-        source="owntracks",
-    )
+def fetch_owntracks_location(
+    url: str, now: float, max_age_seconds: float
+) -> LocationObservation | None:
+    """Compatibility wrapper around the source-neutral OwnTracks adapter."""
+    return OwnTracksLocationSource(HttpOwnTracksReceiver(url)).latest(
+        now=datetime.fromtimestamp(now, UTC), max_age_seconds=max_age_seconds
+    ).observation
 
 
 def emit(decision: GateDecision) -> None:
@@ -174,26 +153,22 @@ def main(now: float | None = None) -> None:
         _operational_error(runtime, "invalid_location_max_age", current_time)
         return
 
-    # Try Telegram live-location first
-    sample: LocationSample | None = None
     try:
-        snapshot = read_snapshot(SNAPSHOT)
-        sample = select_location(
-            snapshot,
-            chat_id=CHAT_ID,
-            now=current_time,
-            max_age_seconds=MAX_LOCATION_AGE_SECONDS,
+        order = parse_source_order(LOCATION_SOURCE_ORDER)
+        resolver = LocationSourceResolver(
+            {
+                "owntracks": OwnTracksLocationSource(HttpOwnTracksReceiver(OWNTRACKS_URL)),
+                "telegram": TelegramLocationSource(SNAPSHOT, CHAT_ID),
+            },
+            order,
         )
-    except SnapshotError:
-        pass
-
-    # Fallback to OwnTracks if Telegram has no fresh location
-    if sample is None:
-        sample = fetch_owntracks_location(
-            OWNTRACKS_URL,
-            now=current_time,
+        sample = resolver.resolve(
+            now=datetime.fromtimestamp(current_time, UTC),
             max_age_seconds=MAX_LOCATION_AGE_SECONDS,
-        )
+        ).observation
+    except ValueError:
+        _operational_error(runtime, "invalid_location_source_order", current_time)
+        return
 
     if sample is None:
         try:

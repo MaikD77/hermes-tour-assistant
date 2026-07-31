@@ -80,3 +80,7 @@ Wetterwarnsysteme noch Notfalldienste.
 Keine Live-Koordinaten, Telegram-IDs, privaten GPX-Dateien, Tokens oder
 Provider-Credentials in öffentliche Issues schreiben. Sicherheitsrelevante
 Funde privat an den Repository-Eigentümer melden.
+
+## Standort-Datengrenze
+
+Standortantworten und Snapshots gelten als nicht vertrauenswürdig und werden strikt ohne stillschweigende String-zu-Zahl-Konvertierung validiert. Der Resolver protokolliert ausschließlich Quelle und Ergebniszustand; Koordinaten gehören weder in normale Logs noch in Gate-stdout. Adapter verändern keinen Tour-State. OwnTracks-Persistenz, Retention und Dateiberechtigungen bleiben Eigentum des lokalen Receivers; der Core nutzt nur dessen schmale HTTP-/Repository-Schnittstelle. Es werden keine Ports geöffnet und weder Tailscale- noch TLS-Einstellungen geändert.
