@@ -1,7 +1,7 @@
 ---
 name: outdoor-tour-assistant
 description: "Quiet, route-aware monitoring for active cycling and walking tours. Uses a deterministic session, route and event runtime and reports only new actionable events ahead."
-version: 1.4.0
+version: 1.4.1
 author: MaikD77
 license: MIT
 platforms: [linux, macos]
@@ -10,14 +10,13 @@ metadata:
     category: productivity
     tags: [cycling, hiking, live-location, route-awareness, monitoring]
     related_skills: [location-session-core, live-location-nearby, maps, komoot]
-    requires_toolsets: [terminal, web]
 ---
 
 # Outdoor Tour Assistant
 
 ## Operating contract
 
-1. Treat every Telegram live-location share as an independent session.
+1. Treat every Telegram live-location share or OwnTracks position stream as an independent session.
 2. Use the canonical runtime under `${HERMES_SKILL_DIR}/scripts`; never edit state JSON directly.
 3. Use only a route with `match_status: matched`, `verified: true`, and a validated private GPX path.
 4. Determine progress, direction, route offset and remaining distance through the runtime.
@@ -66,6 +65,7 @@ Write structured provider results to a private JSON input file and pass the file
 ## Monitoring workflow
 
 - Treat the cron gate context as a reason to check, not as an alert by itself.
+- The gate (`live_tour_gate.py`) tries Telegram live-location first, then **OwnTracks** (`GET /location` on localhost:9090) as fallback — no manual location share needed while OwnTracks runs on the iPhone.
 - Use `context --include-location` only immediately before a configured map, route
   or weather provider needs it.
 - Use the structured weather adapter first:
@@ -73,6 +73,17 @@ Write structured provider results to a private JSON input file and pass the file
   ```bash
   python3 ${HERMES_SKILL_DIR}/scripts/tourctl.py weather-current
   ```
+
+- **Check hourly forecast for rain hunter.** On `moved`, `check_in` or any periodic
+  wake with a verified route and speed >0, get the 3-hour forecast:
+
+  ```bash
+  python3 ${HERMES_SKILL_DIR}/scripts/tourctl.py weather-forecast --hours 3
+  ```
+
+  If rain ≥0.3 mm/h is ahead, record a `weather_hunter` event via the runtime.
+  The event engine deduplicates — no repeat within cooldown. Call
+  `evaluate_rain_hunter()` to determine outrun vs. take-cover.
 
 - Use web search only as an explicitly labelled fallback for warnings unavailable
   through a structured provider. Never infer current conditions from an isolated
@@ -90,6 +101,22 @@ Write structured provider results to a private JSON input file and pass the file
 One normal event may be delivered per wake. Up to three items are permitted only
 when all are safety-critical. A routine `check_in` without a selected event is
 `[SILENT]`.
+
+## Voice tour guide (spoken updates)
+
+On `moved` events with a fresh OwnTracks or Telegram location, the active agent
+may deliver a **spoken tour guide update** via `text_to_speech` in addition to
+(or instead of) a text alert. This is particularly useful when the rider is
+actively cycling and cannot read the screen.
+
+The tour guide should cover:
+1. Current area/settlement (reverse-geocode the position)
+2. Notable sights, superlatives, or history nearby (web search for landmarks)
+3. What is coming up ahead on the route
+4. Keep it warm, conversational, informative — max ~60 seconds of spoken text
+
+Use the configured TTS voice (configurable via `tts.provider` in config.yaml).
+The cron-job prompt references this feature — see `references/cron-prompt.md`.
 
 ## Alert format
 
@@ -160,3 +187,4 @@ Treppe, 15 Stufen, Rampe vorhanden · auf der Route · [Route](<url>)
 - `references/forward-hazard-verification.md` — exact hazard verification
 - `references/weather-monitoring.md` — structured weather and fallback policy
 - `references/cron-prompt.md` — minimal skill-backed cron task
+- `references/owntracks-integration.md` — OwnTracks as fallback location source

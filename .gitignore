@@ -1,10 +1,87 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+*.egg
+.venv/
+.venv*/
+build/
+dist/
+*.so
+
+# Coverage & reports
 .coverage
+.coverage.*
+coverage/
+htmlcov/
+*.coverage
+
+# Cache & lint
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
-.venv/
-__pycache__/
-build/
-dist/
-*.egg-info/
-*.py[cod]
+.mypy_cache/
+*.cache
+
+# Runtime data — NEVER COMMIT
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.json
+!skills/**/references/*.json
+!.env.example
+*.gpx
+!tests/fixtures/*.gpx
+*.log
+*.pid
+*.lock
+*.tmp
+*.temp
+backup-*/
+corrupt-*/
+
+# Secrets & credentials
+.env
+.env.*
+!.env.example
+**/.api_key
+**/*secret*
+**/*token*
+**/*credential*
+**/*password*
+
+# TLS certificates
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+
+# OS files
+.DS_Store
+.DS_Store?
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.orig
+
+# Build artifacts
+*.whl
+*.tar.gz
+*.zip
+
+# Hermes runtime state
+state/
+telegram_live_locations.json
+live_tour_assistant.json
+city_guide_state.json

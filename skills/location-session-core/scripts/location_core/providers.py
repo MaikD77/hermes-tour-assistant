@@ -511,15 +511,6 @@ class OpenRouteServiceProvider(WalkingRouteProvider):
                 "coordinates": encoded,
                 "instructions": False,
                 "preference": "recommended",
-                "options": {
-                    "avoid_features": ["fords"],
-                    "profile_params": {
-                        "weightings": {
-                            "green": {"factor": 0.4},
-                            "quiet": {"factor": 0.6},
-                        }
-                    },
-                },
             }
         ).encode()
         request = urllib.request.Request(
