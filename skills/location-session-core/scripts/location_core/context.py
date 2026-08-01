@@ -9,13 +9,16 @@ from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, time, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .location_sources import LocationObservation
 from .movement import EngineState, MovementMode
 from .place import PlaceEngineState, StayStatus
 from .profile import FactStatus, FactType, ProfileState
+
+if TYPE_CHECKING:
+    from .calendar_context import CalendarContext
 
 
 class Freshness(str, Enum):
@@ -269,6 +272,7 @@ class CurrentContext:
     evidence: tuple[ContextEvidence, ...]
     traits: tuple[ContextTrait, ...]
     status: ContextStatus
+    calendar_context: CalendarContext | None = None
 
 
 @dataclass(frozen=True)
@@ -322,6 +326,7 @@ class CurrentContextEngine:
                 movement_state: EngineState | None = None,
                 place_state: PlaceEngineState | None = None,
                 profile_state: ProfileState | None = None,
+                calendar_context: CalendarContext | None = None,
                 computed_at: datetime,
                 input_issues: tuple[Any, ...] = ()) -> ContextResult:
         cfg, evidence, uncertain = self.config, [], []
@@ -580,6 +585,10 @@ class CurrentContextEngine:
             if matched:
                 confidence = matched.confidence * (.35 if matched.status is FactStatus.STALE else 1)
                 trait(trait_type, True, confidence, (_id("ev", "fact", matched.fact_id),))
+        if calendar_context is not None:
+            calendar_evidence = tuple(item.evidence_id for item in calendar_context.evidence)
+            for kind in calendar_context.traits:
+                trait(kind, True, calendar_context.confidence, calendar_evidence)
         if segment and not stay and place_state and place_state.visits:
             previous = max(place_state.visits, key=lambda v: v.departed_at)
             trait("transition_pattern_match", {"currently_in_transition": True,
@@ -623,13 +632,16 @@ class CurrentContextEngine:
             movement.last_observed_at.isoformat() if movement else None,
             segment.segment_id if segment else None, place_state.last_observation_id if place_state else None,
             profile_state.last_computed_at.isoformat() if profile_state and profile_state.last_computed_at else None,
-            tuple(f.fact_id for f in facts), tuple(t.trait_id for t in traits), tuple(u.code for u in uncertain))
+            tuple(f.fact_id for f in facts), tuple(t.trait_id for t in traits), tuple(u.code for u in uncertain),
+            calendar_context.context_id if calendar_context else None)
         context = CurrentContext(_id("ctx", *identity), subject, computed_at, computed_at,
             valid_until, confidence, freshness, location, movement_context, place_context,
-            profile_context, temporal, tuple(uncertain), tuple(evidence), tuple(traits), status)
-        diagnostic = {"status": processing.value, "schema_version": 1,
+            profile_context, temporal, tuple(uncertain), tuple(evidence), tuple(traits), status,
+            calendar_context)
+        diagnostic = {"status": processing.value, "schema_version": 2,
             "input_available": {"location": observation is not None, "movement": movement is not None,
-                "place": place_state is not None, "profile": profile_state is not None},
+                "place": place_state is not None, "profile": profile_state is not None,
+                "calendar": calendar_context is not None},
             "input_freshness": {"location": lf.value, "movement": mf.value,
                 "place": pf.value, "profile": prof_fresh.value},
             "conflicts": [u.reason for u in uncertain if u.code == "conflicting_evidence"],

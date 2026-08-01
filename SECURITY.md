@@ -5,6 +5,19 @@
 Der Assistent verarbeitet präzise Telegram-Live-Standorte, private GPX-Dateien,
 Routenmetadaten, OpenStreetMap-Daten und Wetterantworten.
 
+Der optionale Kalenderprovider verarbeitet besonders sensible Terminmetadaten ausschließlich
+read-only. Google-Rohantworten, vollständige Teilnehmerlisten, Teilnehmeradressen, Anhänge,
+Konferenzlinks, Tokens und private Notizen werden nicht persistiert. URLs, E-Mail-Adressen,
+Telefonnummern, Meeting-Codes, HTML und Steuerzeichen werden entfernt bzw. maskiert;
+Beschreibungen sind standardmäßig leer. Private Titel werden zu `Private event`, ihr Ort nur zu
+`remote`, `onsite` oder `unknown`. Fehlertexte sind feste, inhaltsfreie Kategorien.
+
+OAuth-Credentials bleiben außerhalb des Repositorys und werden nur per Pfad referenziert. Der
+Google-Adapter akzeptiert allein den Calendar-readonly-Scope und stellt keine Mutation bereit.
+Der Kalendersnapshot enthält nur normalisierte Events und Context-Evidenz, wird atomar mit
+privaten Rechten gespeichert und ersetzt stets den vorherigen Snapshot; es gibt keine Historie
+oder Rohdaten-Cache. Exporte und Explain-Ausgaben stammen aus demselben sanitisierten Snapshot.
+
 Ein expliziter Provideraufruf kann mindestens die ungefähre aktuelle oder
 vorausliegende Position an den konfigurierten Anbieter übertragen. Der Provider-
 und Terminalaufruf kann außerdem im Hermes-Tool-Audit erscheinen. Das Projekt

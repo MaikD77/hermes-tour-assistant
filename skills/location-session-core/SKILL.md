@@ -116,3 +116,11 @@ context-only `reset`. It optionally stores exactly one sanitized snapshot via th
 private atomic repository. Diagnose always reports Shadow Mode, provider calls
 false and delivery false. Never add coordinates, raw provider data or semantic
 place labels to this contract.
+## Read-only calendar context
+
+`calendarctl.py` bindet Kalender als separaten Context Provider an. Nutze zunächst Replay und
+Shadow Mode. Die neun Kommandos (`status`, `fetch`, `current`, `upcoming`, `conflicts`, `explain`,
+`export`, `diagnose`, `reset`) dürfen weder Kalender noch Nachrichten verändern. Google-Zugriff
+erfordert explizite Calendar IDs, eine externe Credential-Referenz und ausschließlich
+`calendar.readonly`. CalendarContext-Evidenz ist technisch; leite daraus keine Absicht, ETA,
+Verspätung, Erinnerung oder Zustellung ab. Details: `docs/architecture/calendar-context.md`.

@@ -25,6 +25,20 @@ Version ersetzt oder über den Hermes-Skill-Installer aktualisiert werden.
 `location-session-core` ist ein interner Support-Skill: Er wird nicht direkt
 aufgerufen, muss aber neben den nutzerseitigen Skills installiert sein.
 
+## Kalenderkontext einrichten
+
+Der sichere Rollout beginnt mit `HERMES_CALENDAR_PROVIDER=replay` und explizitem
+`HERMES_CALENDAR_IDS=primary`; `HERMES_CONTEXT_CALENDAR_ENABLED` bleibt zunächst `false`.
+Für Google wird eine außerhalb des Repositorys liegende Credential-Datei über
+`HERMES_GOOGLE_CREDENTIALS_FILE` referenziert. Sie muss dem Dienstbenutzer gehören und Modus
+`0600` besitzen. Tokens oder Credential-Inhalte gehören weder in `.env`, Logs noch Fixtures.
+Als Scope ist ausschließlich `https://www.googleapis.com/auth/calendar.readonly` zulässig.
+
+Nach Konfiguration dienen `python skills/location-session-core/scripts/calendarctl.py diagnose`
+und `fetch` zur Scope-/Shadow-Mode-Prüfung. Danach `status`, `current`, `upcoming`, `conflicts`
+und `explain` kontrollieren. Rollback: Integration deaktivieren und `calendarctl.py reset`
+ausführen; Location-, Movement-, Place-, Profile- und CurrentContext-State bleiben erhalten.
+
 Das bereitgestellte `scripts/tour-assistant-update.sh` automatisiert den
 Update-Vorgang inklusive Skill-Backup und Gate-Wrapper-Erstellung.
 
