@@ -9,6 +9,10 @@ description = "Private, location-aware outdoor and city-walk assistants for Herm
 requires-python = ">=3.11"
 
 [project.optional-dependencies]
+receiver = [
+  "fastapi>=0.110,<1",
+  "uvicorn[standard]>=0.29,<1",
+]
 test = [
   "pytest>=8.2,<9",
   "pytest-cov>=5,<7",

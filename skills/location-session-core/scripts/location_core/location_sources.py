@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import math
+import os
 import re
 import urllib.error
 import urllib.request
@@ -21,6 +22,19 @@ _ALLOWED_METADATA = frozenset(
     {"event_id", "message_id", "connection_type", "replay_id", "legacy_session_id"}
 )
 _COORDINATE_PAIR = re.compile(r"(?<!\d)[+-]?\d{1,2}(?:\.\d+)?\s*[,;]\s*[+-]?\d{1,3}(?:\.\d+)?(?!\d)")
+
+
+def canonical_device_id_from_env(
+    env: Mapping[str, str] = os.environ,
+) -> str | None:
+    """Return the explicit cross-source device identity without inventing a default."""
+    name = "HERMES_LOCATION_CANONICAL_DEVICE_ID"
+    if name not in env:
+        return None
+    value = env[name].strip()
+    if not value:
+        raise ValueError(f"{name} must not be empty")
+    return value
 
 
 def _number(name: str, value: object, *, optional: bool = False) -> float | None:

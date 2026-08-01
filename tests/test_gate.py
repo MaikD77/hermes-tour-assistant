@@ -47,6 +47,39 @@ def read_output(capsys) -> dict:
     return json.loads(capsys.readouterr().out)
 
 
+def _assert_productive_resolver_device_identity(module, monkeypatch, value) -> None:
+    if value is None:
+        monkeypatch.delenv("HERMES_LOCATION_CANONICAL_DEVICE_ID", raising=False)
+    else:
+        monkeypatch.setenv("HERMES_LOCATION_CANONICAL_DEVICE_ID", value)
+    resolver = module.build_location_resolver()
+    owntracks = resolver.sources["owntracks"]
+    telegram = resolver.sources["telegram"]
+    assert owntracks.canonical_device_id == value
+    assert telegram.canonical_device_id == value
+
+
+def test_productive_gate_resolvers_wire_canonical_device_id(
+    gate_module, city_gate_module, monkeypatch
+) -> None:
+    for module in (gate_module, city_gate_module):
+        _assert_productive_resolver_device_identity(module, monkeypatch, "shared-phone")
+        _assert_productive_resolver_device_identity(module, monkeypatch, None)
+
+
+def test_productive_gate_resolvers_reject_empty_canonical_device_id(
+    gate_module, city_gate_module, monkeypatch
+) -> None:
+    monkeypatch.setenv("HERMES_LOCATION_CANONICAL_DEVICE_ID", "   ")
+    for module in (gate_module, city_gate_module):
+        try:
+            module.build_location_resolver()
+        except ValueError as error:
+            assert "HERMES_LOCATION_CANONICAL_DEVICE_ID" in str(error)
+        else:
+            raise AssertionError("empty canonical device ID was accepted")
+
+
 def test_no_active_live_share_does_not_wake_agent(
     gate_module, monkeypatch, tmp_path, capsys
 ) -> None:

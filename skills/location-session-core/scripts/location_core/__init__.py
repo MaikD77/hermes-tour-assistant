@@ -17,6 +17,7 @@ from .location_sources import (
     OwnTracksLocationSource,
     ReplayLocationSource,
     TelegramLocationSource,
+    canonical_device_id_from_env,
     parse_source_order,
 )
 from .movement import (
@@ -66,6 +67,7 @@ __all__ = [
     "OwnTracksLocationSource",
     "ReplayLocationSource",
     "TelegramLocationSource",
+    "canonical_device_id_from_env",
     "parse_source_order",
     "ProviderRegistry",
     "ProviderResult",
