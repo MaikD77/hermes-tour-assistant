@@ -61,3 +61,25 @@ Separate Place state quantizes centroids and bounds Visits/deduplication;
 diagnostics/events are coordinate-free. Use `placectl forget` or Place-only
 `reset`. Replay requires `synthetic: true`. Keep it in shadow mode without
 delivery or notifications in Sprint 3.
+
+## Mobility profile (Sprint 4 shadow mode)
+
+`location_core.profile` consumes only immutable Place/Visit and aggregated
+MovementSegment contracts. It derives evidence-backed, non-semantic facts:
+frequent place/daytime/overnight, arrival/departure/visit windows, dwell
+duration, and frequent transition/duration/mode. It never reads raw source
+payloads, changes lower-layer state, calls providers, or sends messages.
+
+`HERMES_PROFILE_TIMEZONE` is required and must name an IANA zone. Local clock
+buckets use `zoneinfo`, circular quantiles handle midnight, and night overlap is
+measured on the UTC timeline across DST. Overnight means at least the configured
+seconds overlapping the configured local night window—not “home”. Confidence
+combines bounded sample, distinct-day, quality, consistency, span, recency and
+outlier terms. Thresholds govern candidate/confirmed; age produces stale and
+revoked without deleting evidence.
+
+Profile state is separate, private, locked and atomic: aggregates, facts,
+transition patterns and bounded deduplication only, never tracks or coordinates.
+`profilectl.py` provides `status`, `facts`, `transitions`, `explain`, `export`,
+`forget-place`, `rebuild`, `reset`, and `diagnose`. Forgetting removes dependent
+facts and both transition directions. Reset affects only profile state.
