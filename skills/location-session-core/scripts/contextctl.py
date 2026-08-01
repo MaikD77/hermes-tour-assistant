@@ -10,13 +10,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from location_core.context import ContextConfig, CurrentContextEngine
+from location_core.context_inputs import ContextInputLoader
 from location_core.context_state import SCHEMA_VERSION, ContextStateRepository
-from location_core.movement import MovementConfig
-from location_core.movement_state import MovementStateRepository
-from location_core.place import PlaceConfig
-from location_core.place_state import PlaceStateRepository
-from location_core.profile import ProfileConfig
-from location_core.profile_state import ProfileStateRepository
 from location_core.repository import CorruptStateError
 
 
@@ -42,6 +37,20 @@ def _explain(snapshot: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def compute_context(config: ContextConfig, *, now: datetime,
+                    loader: ContextInputLoader | None = None,
+                    repository: ContextStateRepository | None = None) -> dict[str, Any]:
+    """Execute the productive abstraction-only input path; injectable for integration tests."""
+    input_loader = loader or ContextInputLoader(config)
+    bundle = input_loader.load(now=now)
+    engine = CurrentContextEngine(config)
+    result = engine.compute(observation=bundle.observation,
+        movement_state=bundle.movement_state, place_state=bundle.place_state,
+        profile_state=bundle.profile_state, computed_at=now, input_issues=bundle.issues)
+    (repository or ContextStateRepository(config.state_dir)).save(result.context)
+    return engine.export(result.context)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="context")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -55,13 +64,10 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"context_state": "reset"}))
         return 0
     if args.command == "compute":
-        movement = MovementStateRepository(MovementConfig.from_env().state_dir).load()
-        places = PlaceStateRepository(PlaceConfig.from_env().state_dir).load()
-        profiles = ProfileStateRepository(ProfileConfig.from_env().state_dir).load()
-        result = CurrentContextEngine(config).compute(movement_state=movement,
-            place_state=places, profile_state=profiles, computed_at=datetime.now(UTC))
-        repository.save(result.context)
-        print(json.dumps(_summary(CurrentContextEngine(config).export(result.context))))
+        computed_snapshot = compute_context(
+            config, now=datetime.now(UTC), repository=repository
+        )
+        print(json.dumps(_summary(computed_snapshot)))
         return 0
     try:
         snapshot = repository.load()
@@ -74,7 +80,9 @@ def main(argv: list[str] | None = None) -> int:
             "input_freshness": snapshot["freshness"] if snapshot else "expired",
             "conflicts": [u["reason"] for u in snapshot["uncertainties"]
                 if u["code"] == "conflicting_evidence"] if snapshot else [],
-            "shadow_mode": True, "provider_calls": False, "delivery": False}))
+            "shadow_mode": True, "provider_calls": False,
+            "context_engine_provider_calls": False,
+            "location_source_resolution_on_compute": True, "delivery": False}))
         return 0
     if snapshot is None:
         print(json.dumps({"status": "unknown", "last_context": None}))

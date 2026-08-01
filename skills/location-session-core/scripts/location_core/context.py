@@ -5,8 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from dataclasses import asdict, dataclass
-from datetime import datetime, time, timedelta
+from dataclasses import asdict, dataclass, replace
+from datetime import UTC, datetime, time, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping
@@ -122,7 +122,11 @@ class ContextConfig:
 
         defaults = cls()
         timezone = env.get("HERMES_CONTEXT_TIMEZONE",
-                           env.get("HERMES_PROFILE_TIMEZONE", defaults.timezone)).strip()
+                           env.get("HERMES_PROFILE_TIMEZONE", "")).strip()
+        if not timezone:
+            raise ValueError(
+                "HERMES_CONTEXT_TIMEZONE or HERMES_PROFILE_TIMEZONE is required"
+            )
         return cls(timezone=timezone,
             location_freshness=thresholds("HERMES_CONTEXT_LOCATION", defaults.location_freshness),
             movement_freshness=thresholds("HERMES_CONTEXT_MOVEMENT", defaults.movement_freshness),
@@ -283,6 +287,10 @@ def _quality_score(value: str | None) -> float:
     return {"good": 1., "limited": .7, "poor": .3, "invalid": 0}.get(value or "", .5)
 
 
+def _is_aware(value: datetime) -> bool:
+    return value.tzinfo is not None and value.utcoffset() is not None
+
+
 def _freshness_score(value: Freshness) -> float:
     return {Freshness.FRESH: 1., Freshness.AGING: .75,
             Freshness.STALE: .35, Freshness.EXPIRED: 0}[value]
@@ -314,10 +322,14 @@ class CurrentContextEngine:
                 movement_state: EngineState | None = None,
                 place_state: PlaceEngineState | None = None,
                 profile_state: ProfileState | None = None,
-                computed_at: datetime) -> ContextResult:
-        if computed_at.tzinfo is None or computed_at.utcoffset() is None:
-            raise ValueError("computed_at must be timezone-aware")
+                computed_at: datetime,
+                input_issues: tuple[Any, ...] = ()) -> ContextResult:
         cfg, evidence, uncertain = self.config, [], []
+        computed_invalid = not isinstance(computed_at, datetime) or not _is_aware(computed_at)
+        if not isinstance(computed_at, datetime):
+            computed_at = datetime(1970, 1, 1, tzinfo=UTC)
+        elif computed_invalid:
+            computed_at = computed_at.replace(tzinfo=UTC)
         def add_uncertainty(code: str, component: str, reason: str,
                             severity: str = "warning", ids: tuple[str, ...] = ()) -> None:
             uncertain.append(ContextUncertainty(code, severity, component, reason,
@@ -325,15 +337,65 @@ class CurrentContextEngine:
         def fresh(at: datetime | None, threshold: FreshnessThresholds) -> Freshness:
             return Freshness.EXPIRED if at is None else threshold.classify(
                 max(0., (computed_at - at).total_seconds()))
-        invalid = False
-        timestamps = [x for x in (observation.observed_at if observation else None,
-            movement_state.movement.last_observed_at if movement_state and movement_state.movement else None,
-            place_state.last_observed_at if place_state else None,
-            profile_state.last_computed_at if profile_state else None) if x is not None]
-        for stamp in timestamps:
-            if stamp.tzinfo is None or stamp.utcoffset() is None or stamp > computed_at + timedelta(seconds=cfg.future_skew_seconds):
-                add_uncertainty("clock_skew", "context", "input timestamp is naive or in the future", "critical")
-                invalid = True
+        invalid = computed_invalid
+        invalid_components: set[str] = {"context"} if computed_invalid else set()
+        if computed_invalid:
+            add_uncertainty("invalid_timestamp", "context",
+                "computed_at must be timezone-aware", "critical")
+        for issue in input_issues:
+            add_uncertainty(str(issue.code), str(issue.component), str(issue.reason),
+                            "critical" if issue.critical else "warning")
+            invalid = invalid or bool(issue.critical)
+            if issue.critical:
+                invalid_components.add(str(issue.component))
+
+        def timestamps(component: object) -> tuple[datetime | None, ...]:
+            if component is observation:
+                return (observation.observed_at, observation.received_at) if observation else ()
+            if component is movement_state and movement_state:
+                movement = movement_state.movement
+                segment = movement_state.active_segment
+                return ((movement.state_started_at, movement.last_observed_at) if movement else ()) + \
+                    ((segment.started_at, segment.ended_at) if segment else ()) + \
+                    (movement_state.pending_since, movement_state.last_transition_at) + \
+                    tuple(item.observed_at for item in movement_state.recent)
+            if component is place_state and place_state:
+                accumulators = tuple(x for x in (place_state.candidate, place_state.active_stay) if x)
+                return (place_state.last_observed_at,) + tuple(value for item in accumulators
+                    for value in (item.stay.started_at, item.stay.ended_at,
+                                  item.departure_observed_at)) + tuple(value for item in place_state.places
+                    for value in (item.first_seen_at, item.last_seen_at)) + tuple(value
+                    for item in place_state.visits for value in (item.arrived_at, item.departed_at))
+            if component is profile_state and profile_state:
+                return (profile_state.last_computed_at,) + tuple(value for fact in profile_state.facts
+                    for value in (fact.first_observed_at, fact.last_observed_at, fact.computed_at)) + \
+                    tuple(value for pattern in profile_state.transitions for value in
+                          (pattern.first_seen_at, pattern.last_seen_at))
+            return ()
+
+        def valid_component(name: str, component: Any) -> Any:
+            nonlocal invalid
+            for stamp in timestamps(component):
+                if stamp is None:
+                    continue
+                if not isinstance(stamp, datetime) or not _is_aware(stamp):
+                    add_uncertainty("invalid_timestamp", name,
+                        f"{name} contains a timezone-naive timestamp", "critical")
+                    invalid = True
+                    invalid_components.add(name)
+                    return None
+                if stamp > computed_at + timedelta(seconds=cfg.future_skew_seconds):
+                    add_uncertainty("clock_skew", name,
+                        f"{name} contains a timestamp beyond future tolerance", "critical")
+                    invalid = True
+                    invalid_components.add(name)
+                    return None
+            return component
+
+        observation = valid_component("location", observation)
+        movement_state = valid_component("movement", movement_state)
+        place_state = valid_component("place", place_state)
+        profile_state = valid_component("profile", profile_state)
         # Location: intentionally omit coordinates and raw metadata.
         lf = fresh(observation.observed_at if observation else None, cfg.location_freshness)
         if observation:
@@ -461,6 +523,16 @@ class CurrentContextEngine:
         period = "night" if night else "morning" if clock < time(12) else "afternoon" if clock < time(18) else "evening"
         temporal = TemporalContext(local, local.strftime("%A"), local.weekday() >= 5,
             period, night, cfg.timezone, bool(local.dst() and local.dst() != timedelta(0)))
+        if "location" in invalid_components:
+            location = replace(location, status=ComponentStatus.INVALID)
+        if "movement" in invalid_components:
+            movement_context = replace(movement_context, status=ComponentStatus.INVALID)
+        if "place" in invalid_components:
+            place_context = replace(place_context, status=ComponentStatus.INVALID)
+        if "profile" in invalid_components:
+            profile_context = replace(profile_context, status=ComponentStatus.INVALID)
+        if "context" in invalid_components:
+            temporal = replace(temporal, status=ComponentStatus.INVALID)
         tev = _id("ev", "temporal", cfg.timezone, local.isoformat())
         evidence.append(ContextEvidence(tev, "temporal_rule", "context", tev,
             computed_at, Freshness.FRESH, 1, "good", "timezone-aware local clock", "active"))
@@ -561,7 +633,9 @@ class CurrentContextEngine:
             "input_freshness": {"location": lf.value, "movement": mf.value,
                 "place": pf.value, "profile": prof_fresh.value},
             "conflicts": [u.reason for u in uncertain if u.code == "conflicting_evidence"],
-            "shadow_mode": True, "provider_calls": False, "delivery": False}
+            "shadow_mode": True, "provider_calls": False,
+            "context_engine_provider_calls": False,
+            "location_input_abstracted": True, "delivery": False}
         return ContextResult(context, processing, diagnostic)
 
     def export(self, context: CurrentContext) -> dict[str, Any]:

@@ -289,6 +289,12 @@ Setze mindestens `HERMES_PROFILE_TIMEZONE` oder explizit
 `.env.example` dokumentiert. Der Kontext-CLI liest ausschließlich bestehende
 untere States und führt keine Provideraufrufe aus:
 
+Fehlen beide Zeitzonenvariablen, bricht der Start mit einem Konfigurationsfehler
+ab; ein stilles UTC-Fallback findet nicht statt. Die aktuelle Location wird über
+die gemeinsame `LocationSourceResolver`-Kette und
+`HERMES_LOCATION_SOURCE_ORDER` geladen. OwnTracks-/Telegram-Payloads bleiben
+vollständig innerhalb ihrer Adapter.
+
 ```bash
 python3 skills/location-session-core/scripts/contextctl.py compute
 python3 skills/location-session-core/scripts/contextctl.py status

@@ -12,6 +12,12 @@ from .context import (
     Freshness,
     FreshnessThresholds,
 )
+from .context_inputs import (
+    ContextInputBundle,
+    ContextInputIssue,
+    ContextInputLoader,
+    build_location_source_resolver,
+)
 from .contracts import (
     AlertDecision,
     GateDecision,
@@ -74,6 +80,9 @@ __all__ = [
     "CorruptStateError",
     "ContextConfig",
     "ContextEvidence",
+    "ContextInputBundle",
+    "ContextInputIssue",
+    "ContextInputLoader",
     "ContextResult",
     "ContextStatus",
     "ContextTrait",
@@ -82,6 +91,7 @@ __all__ = [
     "CurrentContextEngine",
     "Freshness",
     "FreshnessThresholds",
+    "build_location_source_resolver",
     "GateDecision",
     "JsonStateRepository",
     "LocationSample",
