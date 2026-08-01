@@ -35,6 +35,23 @@ from .movement import (
 )
 from .movement_state import MovementStateRepository
 from .output_safety import navigation_url, safe_label, safe_prose
+from .place import (
+    MatchStatus,
+    Place,
+    PlaceConfig,
+    PlaceEngine,
+    PlaceEngineState,
+    PlaceEvent,
+    PlaceEventType,
+    PlaceMatch,
+    PlaceProcessingStatus,
+    PlaceResult,
+    PlaceStatus,
+    PlaceVisit,
+    Stay,
+    StayStatus,
+)
+from .place_state import PlaceStateRepository
 from .providers import ProviderRegistry
 from .repository import CorruptStateError, JsonStateRepository
 
@@ -63,6 +80,21 @@ __all__ = [
     "MovementState",
     "MovementStateRepository",
     "ProcessingStatus",
+    "MatchStatus",
+    "Place",
+    "PlaceConfig",
+    "PlaceEngine",
+    "PlaceEngineState",
+    "PlaceEvent",
+    "PlaceEventType",
+    "PlaceMatch",
+    "PlaceProcessingStatus",
+    "PlaceResult",
+    "PlaceStateRepository",
+    "PlaceStatus",
+    "PlaceVisit",
+    "Stay",
+    "StayStatus",
     "HttpOwnTracksReceiver",
     "OwnTracksLocationSource",
     "ReplayLocationSource",

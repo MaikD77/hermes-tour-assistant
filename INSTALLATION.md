@@ -245,3 +245,23 @@ HERMES_LOCATION_CANONICAL_DEVICE_ID=maik-iphone
 Diese Kennung beim Aufbau beider Adapter als `canonical_device_id` übergeben. Je physischem Gerät eine andere Kennung verwenden; niemals mehrere Personen oder Geräte auf denselben Wert abbilden. Ohne diese explizite Abbildung bleiben die bisherigen quellspezifischen Gerätekennungen erhalten und die Movement Engine lehnt einen Streamwechsel als anderes Gerät typisiert ab.
 
 Movement-State-Schema 2 ergänzt einen konstant großen Segmentakkumulator. Schema 0/1 wird deterministisch migriert, sofern der alte aktive State noch einen Ursprung im begrenzten Puffer enthält; andernfalls wird er wie anderer beschädigter State quarantänisiert statt mit erfundenen Koordinaten fortgeführt.
+
+## Place Engine (getrennter Shadow State)
+
+`HERMES_PLACE_STATE_DIR` ist standardmäßig `~/.local/state/hermes/places`.
+Ordner/Dateien werden `0700`/`0600`; Symlinks werden abgewiesen. Der State hält
+quantisierte Cluster, höchstens 200 trackfreie Visits und 256 Deduplizierungs-IDs.
+
+```bash
+python3 skills/location-session-core/scripts/placectl.py status
+python3 skills/location-session-core/scripts/placectl.py replay tests/fixtures/place-replay.json
+python3 skills/location-session-core/scripts/placectl.py list
+python3 skills/location-session-core/scripts/placectl.py visits
+python3 skills/location-session-core/scripts/placectl.py forget place_...
+python3 skills/location-session-core/scripts/placectl.py reset
+```
+
+`forget` entfernt einen Place und Visits; `reset` leert ausschließlich
+Place-/Stay-State. Rollout: Unit Tests, synthetische/anonymisierte Replays,
+Shadow Mode, mehrtägiger Vergleich, Kalibrierung, später Context-Engine-Nutzung.
+Es werden keine Nachrichten aktiviert.

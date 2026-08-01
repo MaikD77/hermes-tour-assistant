@@ -36,3 +36,21 @@ never expose precise coordinates in gate or diagnostic output.
 Segments contain aggregate distance, displacement, speed, heading, quality and gap counts, never a full coordinate list. Medium gaps continue uncertain; >=900 seconds complete the segment. `movement_state` reuses `JsonStateRepository`. The CLI supports sanitized status/diagnose, synthetic-only replay and movement-only reset. Consumers may run this in shadow mode, but it must not change Tour/City state, gates, event priority or delivery.
 
 Review contract: construct OwnTracks and Telegram adapters with the same explicit `canonical_device_id` only when they represent the same physical device. Message/event IDs remain metadata. Segment metrics use a persisted constant-size accumulator independent of the bounded recent buffer. State schema 2 migrates legacy state deterministically. Speed bands are disjoint (`walking <= walk_max`, `cycling < cycling_max == automotive_min`, `automotive >= automotive_min`), and stationary confirmation uses its dedicated minimum duration and radius anchor.
+
+## Place and stay inference
+
+`location_core.place` consumes observations and read-only `MovementState`; it
+never mutates Movement and Movement never imports Place. Place (stable private
+cluster), Stay (one presence), and Visit (completed assignment without track)
+are immutable and distinct. They are not POIs, addresses or semantic labels.
+
+Defaults: 50 m arrival, 120 s candidacy, 300 s confirmation, three samples, and
+80 m/120 s departure hysteresis. Poor GPS cannot force transitions;
+cycling/automotive cannot start a Stay; long gaps mean uncertainty. Matching
+returns typed ambiguity. Promotion needs Visits, dwell and quality. Arrival
+contains backdated `observed_at` and later `confirmed_at`.
+
+Separate Place state quantizes centroids and bounds Visits/deduplication;
+diagnostics/events are coordinate-free. Use `placectl forget` or Place-only
+`reset`. Replay requires `synthetic: true`. Keep it in shadow mode without
+delivery or notifications in Sprint 3.

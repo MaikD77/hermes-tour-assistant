@@ -1,0 +1,11 @@
+{
+  "synthetic": true,
+  "description": "Anonymous stationary stay followed by confirmed departure",
+  "observations": [
+    {"observed_at": "2026-01-01T10:00:00Z", "latitude": 50.0000, "longitude": 10.0000, "accuracy_m": 8, "speed_mps": 0},
+    {"observed_at": "2026-01-01T10:02:00Z", "latitude": 50.0001, "longitude": 10.0000, "accuracy_m": 8, "speed_mps": 0},
+    {"observed_at": "2026-01-01T10:05:00Z", "latitude": 50.0000, "longitude": 10.0001, "accuracy_m": 8, "speed_mps": 0},
+    {"observed_at": "2026-01-01T10:10:00Z", "latitude": 50.0010, "longitude": 10.0010, "accuracy_m": 8, "speed_mps": 2},
+    {"observed_at": "2026-01-01T10:12:00Z", "latitude": 50.0020, "longitude": 10.0020, "accuracy_m": 8, "speed_mps": 2}
+  ]
+}

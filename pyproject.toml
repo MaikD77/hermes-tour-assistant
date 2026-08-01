@@ -46,6 +46,10 @@ py-modules = []
 "share/hermes-tour-assistant/skills/location-session-core/scripts/location_core" = [
   "skills/location-session-core/scripts/location_core/*.py",
 ]
+"share/hermes-tour-assistant/skills/location-session-core/scripts" = [
+  "skills/location-session-core/scripts/movementctl.py",
+  "skills/location-session-core/scripts/placectl.py",
+]
 "share/hermes-tour-assistant/skills/city-walk-guide" = [
   "skills/city-walk-guide/SKILL.md",
 ]
