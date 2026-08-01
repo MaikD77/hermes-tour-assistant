@@ -285,3 +285,26 @@ Der Resolver fragt Quellen strikt nacheinander ab; die erste gültige und aktuel
 ### Beobachtungsidentität und Zeitmodell
 
 `observation_id` ist eine reproduzierbare, koordinatenfreie SHA-256-Kennung über kanonisch serialisierte Identitätsfelder einer einzelnen Quellenbeobachtung. Sie ist keine Personen-, Sitzungs- oder Ortskennung. `observed_at` und `received_at` sind intern ausschließlich timezone-aware UTC-`datetime`-Werte. Quellspezifische Metadaten werden nach Adapter-Allowlist als sortiertes, unveränderliches Tuple gespeichert; Rohpayloads, Koordinatenkopien, Secrets und Credential-URLs sind unzulässig. Die Architekturentscheidung und Migrationsfolgen stehen in [ADR 0001](docs/adr/0001-location-sources-are-adapters.md).
+
+## Deterministische Movement Engine
+
+Der gemeinsame Core leitet aus `LocationObservation` ausschließlich regelbasiert die Modi `unknown`, `stationary`, `walking`, `cycling` und `automotive` ab. Bestätigte Übergänge erzeugen deterministische Ereignisse und kompakte aktive oder abgeschlossene Segmente. Confidence bezeichnet nur technische Klassifikationssicherheit. Hysterese (drei Beobachtungen, 20 s Mindestdauer, 45 s Cooldown), Qualitätsgrenzen und getrennte Eintrittsbänder verhindern Flattern und Fehlklassifikationen durch einzelne GPS-Sprünge. Kurze Lücken bis 180 s bleiben im Segment; ab 900 s wird es abgeschlossen.
+
+```mermaid
+flowchart TD
+  O[LocationObservation] --> V[Observation validation]
+  V --> E[Movement Engine]
+  E --> S[MovementState]
+  S --> ES[MovementEvents + MovementSegment]
+  ES --> C[Outdoor / City / zukünftige Context Consumer]
+```
+
+Die Engine ist in Sprint 2 nicht an Versand- oder Gate-Entscheidungen angeschlossen. `movementctl.py status|diagnose|replay|reset` bietet koordinatenfreie Diagnose; Replay akzeptiert nur Dateien mit `synthetic: true`. Details: [ADR 0002](docs/adr/0002-movement-from-canonical-observations.md).
+
+### Präzisierungen aus dem Sprint-2-Review
+
+Aktive Segmente verwenden einen konstant großen privaten Akkumulator für Startpunkt, ungerundete Gesamtdistanz, Maximalgeschwindigkeit und zirkuläre Heading-Summen. Damit bleiben Segmentmetriken nach Ringpufferrotation und State-Neuladen korrekt; der Diagnose-Output gibt den privaten Startpunkt niemals aus. Der `recent`-Puffer bleibt auf `buffer_size` begrenzt.
+
+Die Geschwindigkeitsbereiche sind disjunkt: `stationary <= 0,7 m/s`, `walking <= 2,6 m/s`, `cycling < 10,0 m/s` und `automotive >= 10,0 m/s`. Deshalb müssen `HERMES_MOVEMENT_CYCLING_MAX_MPS` und `HERMES_MOVEMENT_AUTOMOTIVE_MIN_MPS` denselben Übergangswert besitzen. Stationär wird erst nach der vollständigen `stationary_min_seconds`-Dauer innerhalb des Radius bestätigt.
+
+Für einen quellenübergreifenden Stream muss beim Erzeugen sowohl des OwnTracks- als auch des Telegram-Adapters derselbe explizite `canonical_device_id` (z. B. aus `HERMES_LOCATION_CANONICAL_DEVICE_ID=maik-iphone`) übergeben werden. Event- beziehungsweise Message-IDs verbleiben in `source_metadata`; ohne explizite Zuordnung werden Geräte nicht implizit vermischt.

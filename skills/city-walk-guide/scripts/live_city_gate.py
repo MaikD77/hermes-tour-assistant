@@ -32,6 +32,7 @@ from location_core.location_sources import (  # noqa: E402
     LocationSourceResolver,
     OwnTracksLocationSource,
     TelegramLocationSource,
+    canonical_device_id_from_env,
     parse_source_order,
 )
 
@@ -114,6 +115,20 @@ def _operational_error(runtime: CityRuntime, code: str, now: float) -> None:
         emit(runtime.operational_decision(code, now=now))
 
 
+def build_location_resolver() -> LocationSourceResolver:
+    """Build both productive adapters with one explicitly configured stream ID."""
+    device_id = canonical_device_id_from_env()
+    return LocationSourceResolver(
+        {
+            "owntracks": OwnTracksLocationSource(
+                HttpOwnTracksReceiver(OWNTRACKS_URL), canonical_device_id=device_id
+            ),
+            "telegram": TelegramLocationSource(
+                SNAPSHOT, CHAT_ID, canonical_device_id=device_id
+            ),
+        },
+        parse_source_order(LOCATION_SOURCE_ORDER),
+    )
 def main(now: float | None = None) -> None:
     current_time = time.time() if now is None else now
     runtime = CityRuntime(STATE)
@@ -124,19 +139,18 @@ def main(now: float | None = None) -> None:
         _operational_error(runtime, "invalid_location_max_age", current_time)
         return
     try:
-        resolver = LocationSourceResolver(
-            {
-                "owntracks": OwnTracksLocationSource(HttpOwnTracksReceiver(OWNTRACKS_URL)),
-                "telegram": TelegramLocationSource(SNAPSHOT, CHAT_ID),
-            },
-            parse_source_order(LOCATION_SOURCE_ORDER),
-        )
+        resolver = build_location_resolver()
         sample = resolver.resolve(
             now=datetime.fromtimestamp(current_time, UTC),
             max_age_seconds=MAX_LOCATION_AGE_SECONDS,
         ).observation
-    except ValueError:
-        _operational_error(runtime, "invalid_location_source_order", current_time)
+    except ValueError as error:
+        code = (
+            "invalid_canonical_device_id"
+            if "HERMES_LOCATION_CANONICAL_DEVICE_ID" in str(error)
+            else "invalid_location_source_order"
+        )
+        _operational_error(runtime, code, current_time)
         return
     if sample is None:
         emit(GateDecision(wake_agent=False))

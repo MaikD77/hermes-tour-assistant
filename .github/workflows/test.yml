@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -27,11 +29,11 @@ jobs:
           cache: pip
 
       - name: Install project and verification tools
-        run: python -m pip install --upgrade pip && python -m pip install -e ".[test]"
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[receiver,test]"
 
       - name: Lint skills and tests
         if: matrix.python-version == '3.11'
-        run: ruff check skills tests
+        run: ruff check skills services tests
 
       - name: Type-check canonical runtime
         if: matrix.python-version == '3.11'
@@ -40,6 +42,7 @@ jobs:
           skills/location-session-core/scripts
           skills/outdoor-tour-assistant/scripts
           skills/city-walk-guide/scripts
+          services/owntracks-receiver
 
       - name: Run tests with coverage
         run: pytest --cov --cov-report=term-missing --cov-fail-under=85
@@ -47,3 +50,12 @@ jobs:
       - name: Verify build metadata
         if: matrix.python-version == '3.11'
         run: python -m build
+
+      - name: Verify patch whitespace
+        if: matrix.python-version == '3.11'
+        run: |
+          if [[ -n "${{ github.base_ref }}" ]]; then
+            git diff --check "origin/${{ github.base_ref }}...HEAD"
+          else
+            git diff --check HEAD^
+          fi

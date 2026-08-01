@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import math
+import os
 import re
 import urllib.error
 import urllib.request
@@ -21,6 +22,19 @@ _ALLOWED_METADATA = frozenset(
     {"event_id", "message_id", "connection_type", "replay_id", "legacy_session_id"}
 )
 _COORDINATE_PAIR = re.compile(r"(?<!\d)[+-]?\d{1,2}(?:\.\d+)?\s*[,;]\s*[+-]?\d{1,3}(?:\.\d+)?(?!\d)")
+
+
+def canonical_device_id_from_env(
+    env: Mapping[str, str] = os.environ,
+) -> str | None:
+    """Return the explicit cross-source device identity without inventing a default."""
+    name = "HERMES_LOCATION_CANONICAL_DEVICE_ID"
+    if name not in env:
+        return None
+    value = env[name].strip()
+    if not value:
+        raise ValueError(f"{name} must not be empty")
+    return value
 
 
 def _number(name: str, value: object, *, optional: bool = False) -> float | None:
@@ -253,8 +267,11 @@ class OwnTracksLocationSource:
     name = "owntracks"
     _METADATA_ALLOWLIST = frozenset({"event_id", "connection_type"})
 
-    def __init__(self, receiver: OwnTracksReceiver) -> None:
+    def __init__(self, receiver: OwnTracksReceiver, canonical_device_id: str | None = None) -> None:
         self.receiver = receiver
+        if canonical_device_id is not None and not canonical_device_id.strip():
+            raise ValueError("canonical_device_id must not be empty")
+        self.canonical_device_id = canonical_device_id
 
     def latest(self, *, now: datetime, max_age_seconds: float) -> LocationSourceResult:
         now = _utc("now", now)
@@ -274,7 +291,7 @@ class OwnTracksLocationSource:
             }
             observation = LocationObservation(
                 source="owntracks",
-                device_id=_required_string(payload, "device_id"),
+                device_id=self.canonical_device_id or _required_string(payload, "device_id"),
                 observed_at=_iso_datetime(payload.get("observed_at")),
                 received_at=_iso_datetime(payload["received_at"])
                 if payload.get("received_at") is not None
@@ -303,8 +320,16 @@ class TelegramLocationSource:
     name = "telegram"
     _METADATA_ALLOWLIST = frozenset({"message_id"})
 
-    def __init__(self, snapshot_path: Path, chat_id: str) -> None:
+    def __init__(
+        self,
+        snapshot_path: Path,
+        chat_id: str,
+        canonical_device_id: str | None = None,
+    ) -> None:
         self.snapshot_path, self.chat_id = snapshot_path, chat_id
+        if canonical_device_id is not None and not canonical_device_id.strip():
+            raise ValueError("canonical_device_id must not be empty")
+        self.canonical_device_id = canonical_device_id
 
     def latest(self, *, now: datetime, max_age_seconds: float) -> LocationSourceResult:
         now = _utc("now", now)
@@ -325,7 +350,7 @@ class TelegramLocationSource:
                 message_id = _required_string(item, "message_id")
                 observation = LocationObservation(
                     source="telegram",
-                    device_id=message_id,
+                    device_id=self.canonical_device_id or message_id,
                     observed_at=_unix_datetime("updated_at", item.get("updated_at")),
                     received_at=now,
                     latitude=_required_number(item, "lat"),

@@ -28,3 +28,11 @@ never expose precise coordinates in gate or diagnostic output.
 ## Source architecture
 
 `location_core.location_sources` is the only boundary between untrusted source payloads and consumers. It exposes immutable `LocationObservation` values, typed source results, OwnTracks/Telegram/replay adapters, and a sequential resolver. `HERMES_LOCATION_SOURCE_ORDER` defaults to `owntracks,telegram`; `telegram,owntracks` preserves legacy priority. Consumers must not inspect adapter payloads or let a source write tour state. Diagnostics remain coordinate-free.
+
+## Movement inference
+
+`location_core.movement` consumes only canonical observations. Its immutable state, events and segments are deterministic and source-neutral. Defaults: stationary <=0.7 m/s within 15 m; walking <=2.6 m/s; cycling below the 10 m/s automotive entry threshold (up to a 12 m/s cycling band); automotive >=10 m/s. Three confirming observations, 20 seconds and a 45-second cooldown stabilize transitions. GPS accuracy, missing fields, sensor disagreement, implausible speed and gaps reduce quality (`good`, `limited`, `poor`, `invalid`); poor input cannot confirm a transition.
+
+Segments contain aggregate distance, displacement, speed, heading, quality and gap counts, never a full coordinate list. Medium gaps continue uncertain; >=900 seconds complete the segment. `movement_state` reuses `JsonStateRepository`. The CLI supports sanitized status/diagnose, synthetic-only replay and movement-only reset. Consumers may run this in shadow mode, but it must not change Tour/City state, gates, event priority or delivery.
+
+Review contract: construct OwnTracks and Telegram adapters with the same explicit `canonical_device_id` only when they represent the same physical device. Message/event IDs remain metadata. Segment metrics use a persisted constant-size accumulator independent of the bounded recent buffer. State schema 2 migrates legacy state deterministically. Speed bands are disjoint (`walking <= walk_max`, `cycling < cycling_max == automotive_min`, `automotive >= automotive_min`), and stationary confirmation uses its dedicated minimum duration and radius anchor.

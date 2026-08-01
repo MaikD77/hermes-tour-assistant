@@ -78,6 +78,35 @@ def test_valid_telegram_observation(tmp_path):
     assert result.observation.source_metadata == (("message_id", "m1"),)
 
 
+def test_adapters_share_configured_canonical_device_identity(tmp_path):
+    owntracks = OwnTracksLocationSource(
+        Receiver(owntracks_payload(event_id="ot-1")), "maik-iphone"
+    ).latest(now=DT_NOW, max_age_seconds=300)
+    path = tmp_path / "locations.json"
+    path.write_text(
+        '{"locations":[{"chat_id":"42","message_id":"tg-1",'
+        f'"lat":48.1,"lon":11.5,"updated_at":{NOW - 1},"expires_at":{NOW + 60}'
+        '}]}',
+        encoding="utf-8",
+    )
+    telegram = TelegramLocationSource(path, "42", "maik-iphone").latest(
+        now=DT_NOW, max_age_seconds=300
+    )
+    assert owntracks.observation is not None and telegram.observation is not None
+    assert owntracks.observation.device_id == telegram.observation.device_id == "maik-iphone"
+    assert dict(owntracks.observation.source_metadata) == {"event_id": "ot-1"}
+    assert dict(telegram.observation.source_metadata) == {"message_id": "tg-1"}
+
+
+@pytest.mark.parametrize("source", ["owntracks", "telegram"])
+def test_adapters_reject_empty_canonical_device_identity(tmp_path, source):
+    with pytest.raises(ValueError, match="canonical_device_id"):
+        if source == "owntracks":
+            OwnTracksLocationSource(Receiver(), " ")
+        else:
+            TelegramLocationSource(tmp_path / "locations.json", "42", " ")
+
+
 def test_replay_observation_and_staleness():
     source = ReplayLocationSource([observation()])
     assert source.latest(now=DT_NOW, max_age_seconds=300).status is LocationStatus.OK

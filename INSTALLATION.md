@@ -220,3 +220,28 @@ privat quarantänisiert und einmalig als Betriebsfehler gemeldet.
 ## Standortquellen konfigurieren
 
 Neue Installationen verwenden `HERMES_LOCATION_SOURCE_ORDER=owntracks,telegram`. Für eine bestehende Installation ohne Verhaltensänderung zunächst `HERMES_LOCATION_SOURCE_ORDER=telegram,owntracks` setzen. Nach Prüfung des lokalen OwnTracks-Receivers kann auf den neuen Standard gewechselt werden. `HERMES_OWNTRACKS_URL` zeigt weiter auf dessen lokale `/location`-Schnittstelle; der Core öffnet SQLite nie direkt. Replay wird programmgesteuert über `ReplayLocationSource` für Tests oder Offline-Abläufe eingespeist und benötigt keine zusätzliche Persistenz.
+
+## Movement Engine (Shadow Mode)
+
+`HERMES_MOVEMENT_STATE_DIR` legt den privaten, gesperrten Movement-State fest (Standard `~/.local/state/hermes/movement`). Der State besitzt Schema-Version 1, wird atomar mit `0600` geschrieben und speichert nur einen begrenzten Feature-Puffer. Bei beschädigtem JSON wird die Datei quarantänisiert. Rollback: Shadow-Prozess stoppen und nur `movement reset` ausführen; Tour-, City- und OwnTracks-State bleiben unverändert.
+
+```bash
+python3 skills/location-session-core/scripts/movementctl.py status
+python3 skills/location-session-core/scripts/movementctl.py diagnose
+python3 skills/location-session-core/scripts/movementctl.py replay /path/to/synthetic.json
+python3 skills/location-session-core/scripts/movementctl.py reset
+```
+
+Rollout: (1) Unit- und synthetische Replay-Tests, (2) anonymisierter Offline-Replay, (3) produktiver Shadow Mode ohne Benachrichtigung, (4) manueller Aktivitätsvergleich, (5) Canary nur in interner Diagnose, (6) Entscheidungsnutzung erst in einem späteren Sprint.
+
+### Kanonische Geräteidentität konfigurieren
+
+Für Shadow-Mode-Aufrufer, die zwischen OwnTracks und Telegram wechseln, eine nicht-personenübergreifende Kennung konfigurieren:
+
+```bash
+HERMES_LOCATION_CANONICAL_DEVICE_ID=maik-iphone
+```
+
+Diese Kennung beim Aufbau beider Adapter als `canonical_device_id` übergeben. Je physischem Gerät eine andere Kennung verwenden; niemals mehrere Personen oder Geräte auf denselben Wert abbilden. Ohne diese explizite Abbildung bleiben die bisherigen quellspezifischen Gerätekennungen erhalten und die Movement Engine lehnt einen Streamwechsel als anderes Gerät typisiert ab.
+
+Movement-State-Schema 2 ergänzt einen konstant großen Segmentakkumulator. Schema 0/1 wird deterministisch migriert, sofern der alte aktive State noch einen Ursprung im begrenzten Puffer enthält; andernfalls wird er wie anderer beschädigter State quarantänisiert statt mit erfundenen Koordinaten fortgeführt.
