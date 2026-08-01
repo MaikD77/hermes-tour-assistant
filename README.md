@@ -360,3 +360,11 @@ HERMES_PROFILE_TIMEZONE=Europe/Berlin python skills/location-session-core/script
 Rollout: Unit Tests → synthetische Replays → Offline-Rebuild → Shadow Mode →
 mehrwöchige Profilbildung → Nutzerprüfung des Exports → erst danach mögliche
 semantische Kontextinterpretation.
+
+Candidate-Facts werden erst sichtbar, wenn Sample- **und** Confidence-Schwelle
+erreicht sind; Confirmed verlangt zusätzlich Confirmed-Samples und unabhängige
+Tage. Retention ist eine echte Zeitspanne ab `computed_at`: alle Aggregate
+werden ausschließlich aus koordinatenfreier Evidenz innerhalb des Fensters neu
+gebildet. `profile forget-place` vergisst nur im Profil; ein Rebuild kann aus
+dem unveränderten Place-State neu lernen. Dauerhaftes schichtübergreifendes
+Vergessen erfordert zuerst `place forget`.

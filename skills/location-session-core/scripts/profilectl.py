@@ -10,7 +10,11 @@ import sys
 from location_core.place import PlaceConfig
 from location_core.place_state import PlaceStateRepository
 from location_core.profile import FactStatus, MobilityProfileEngine, ProfileConfig
-from location_core.profile_state import SCHEMA_VERSION, ProfileStateRepository
+from location_core.profile_state import (
+    SCHEMA_VERSION,
+    ProfileRebuildRequired,
+    ProfileStateRepository,
+)
 from location_core.repository import CorruptStateError
 
 
@@ -43,6 +47,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     try:
         state = repository.load()
+    except ProfileRebuildRequired:
+        print(json.dumps({"valid": False, "rebuild_required": True}))
+        return 3
     except CorruptStateError as error:
         print(json.dumps({"valid": False, "quarantine": error.quarantine_path.name}))
         return 2

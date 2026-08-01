@@ -101,6 +101,18 @@ class PlaceStatistics:
 
 
 @dataclass(frozen=True)
+class VisitEvidence:
+    """Coordinate-free retained input sufficient to reproduce place aggregates."""
+
+    visit_id: str
+    place_id: str
+    arrived_at: datetime
+    departed_at: datetime
+    duration_seconds: float
+    confidence: float
+
+
+@dataclass(frozen=True)
 class TransitionSample:
     sample_id: str
     from_place_id: str
@@ -130,11 +142,12 @@ class PlaceTransitionPattern:
 
 @dataclass(frozen=True)
 class ProfileState:
-    schema_version: int = 1
+    schema_version: int = 2
     facts: tuple[PersonalContextFact, ...] = ()
     transitions: tuple[PlaceTransitionPattern, ...] = ()
     place_statistics: tuple[PlaceStatistics, ...] = ()
     transition_samples: tuple[TransitionSample, ...] = ()
+    visit_evidence: tuple[VisitEvidence, ...] = ()
     seen_visit_ids: tuple[str, ...] = ()
     seen_transition_ids: tuple[str, ...] = ()
     last_computed_at: datetime | None = None
@@ -154,6 +167,8 @@ class ProfileConfig:
     candidate_confidence: float = .35
     confirmed_confidence: float = .65
     transition_minimum_samples: int = 3
+    transition_confirmed_samples: int = 8
+    transition_confirmed_distinct_days: int = 5
     maximum_transition_seconds: int = 21600
     retention_days: int = 730
     deduplication_limit: int = 2048
@@ -167,10 +182,13 @@ class ProfileConfig:
         counts = (self.candidate_visits, self.confirmed_visits,
                   self.confirmed_distinct_days, self.minimum_overnight_seconds,
                   self.stale_days, self.revoke_days, self.transition_minimum_samples,
+                  self.transition_confirmed_samples, self.transition_confirmed_distinct_days,
                   self.maximum_transition_seconds, self.retention_days,
                   self.deduplication_limit)
         if min(counts) < 1 or self.confirmed_visits < self.candidate_visits:
             raise ValueError("invalid profile thresholds")
+        if self.transition_confirmed_samples < self.transition_minimum_samples:
+            raise ValueError("transition confirmation must not precede candidacy")
         if self.revoke_days <= self.stale_days:
             raise ValueError("revoke days must exceed stale days")
         if not 0 <= self.candidate_confidence <= self.confirmed_confidence <= 1:
@@ -210,6 +228,8 @@ class ProfileConfig:
             number("HERMES_PROFILE_CANDIDATE_CONFIDENCE", defaults.candidate_confidence),
             number("HERMES_PROFILE_CONFIRMED_CONFIDENCE", defaults.confirmed_confidence),
             integer("HERMES_PROFILE_TRANSITION_MIN_SAMPLES", defaults.transition_minimum_samples),
+            integer("HERMES_PROFILE_TRANSITION_CONFIRMED_SAMPLES", defaults.transition_confirmed_samples),
+            integer("HERMES_PROFILE_TRANSITION_CONFIRMED_DISTINCT_DAYS", defaults.transition_confirmed_distinct_days),
             integer("HERMES_PROFILE_MAX_TRANSITION_SECONDS", defaults.maximum_transition_seconds),
             integer("HERMES_PROFILE_RETENTION_DAYS", defaults.retention_days),
             integer("HERMES_PROFILE_DEDUPLICATION_LIMIT", defaults.deduplication_limit),
@@ -273,13 +293,20 @@ def overnight_seconds(visit: PlaceVisit, config: ProfileConfig) -> float:
 
 
 def _status(samples: int, days: int, confidence: float, last: datetime,
-            now: datetime, config: ProfileConfig) -> FactStatus:
+            now: datetime, config: ProfileConfig, *, candidate_samples: int,
+            confirmed_samples: int, confirmed_days: int,
+            qualifying_confidence: float | None = None) -> FactStatus | None:
+    if samples < candidate_samples:
+        return None
     age = (now - last).total_seconds() / 86400
+    qualified = confidence if qualifying_confidence is None else qualifying_confidence
     if age >= config.revoke_days:
-        return FactStatus.REVOKED
+        return FactStatus.REVOKED if qualified >= config.candidate_confidence else None
     if age >= config.stale_days:
-        return FactStatus.STALE
-    if (samples >= config.confirmed_visits and days >= config.confirmed_distinct_days
+        return FactStatus.STALE if qualified >= config.candidate_confidence else None
+    if confidence < config.candidate_confidence:
+        return None
+    if (samples >= confirmed_samples and days >= confirmed_days
             and confidence >= config.confirmed_confidence):
         return FactStatus.CONFIRMED
     return FactStatus.CANDIDATE
@@ -295,39 +322,6 @@ def _confidence(samples: int, days: int, quality: float, consistency: float,
     value = (.25 * sample_score + .2 * day_score + .2 * quality + .15 * consistency
              + .1 * span_score + .1 * recency - .15 * outliers)
     return round(max(0.0, min(1.0, value)), 3)
-
-
-def _updated_statistics(old: PlaceStatistics | None, visit: PlaceVisit,
-                        config: ProfileConfig) -> PlaceStatistics:
-    zone = ZoneInfo(config.timezone)
-    local_arrival = visit.arrived_at.astimezone(zone)
-    local_departure = visit.departed_at.astimezone(zone)
-    arrivals = (old.arrival_minutes if old else ()) + (local_arrival.hour * 60 + local_arrival.minute,)
-    departures = (old.departure_minutes if old else ()) + (local_departure.hour * 60 + local_departure.minute,)
-    # Bounded duration samples are represented through aggregates plus arrival bucket count.
-    count = (old.visit_count if old else 0) + 1
-    total = (old.total_dwell_seconds if old else 0) + visit.duration_seconds
-    # Incremental median needs bounded samples: durations are encoded alongside departure buckets
-    # as a derived rolling estimate; rebuild applies visits in the same deterministic order.
-    dwell_samples = ((old.dwell_samples if old else ()) + (visit.duration_seconds,))[-512:]
-    robust_median = median(dwell_samples)
-    weekdays = list(old.weekday_distribution if old else (0,) * 7)
-    weekdays[local_arrival.weekday()] += 1
-    first = min(old.first_observed_at, visit.arrived_at) if old else visit.arrived_at
-    last = max(old.last_observed_at, visit.departed_at) if old else visit.departed_at
-    # Active dates are conservatively reconstructed from distribution; repeated-day protection
-    # uses retained local date keys embedded in seen IDs at engine level.
-    active_dates = tuple(sorted(set((old.active_dates if old else ()) +
-                                    (local_arrival.date().isoformat(),))))[-512:]
-    distinct = len(active_dates)
-    observed = max(1, (last.astimezone(zone).date() - first.astimezone(zone).date()).days + 1)
-    overnight = int(overnight_seconds(visit, config) >= config.minimum_overnight_seconds)
-    return PlaceStatistics(visit.place_id, count, distinct, observed,
-        round(count / max(1, observed) * 7, 3), round(distinct / observed, 3), total,
-        total / count, robust_median, arrivals[-512:], departures[-512:], dwell_samples,
-        active_dates, tuple(weekdays),
-        sum(weekdays[:5]), sum(weekdays[5:]), (old.overnight_count if old else 0) + overnight,
-        (old.quality_sum if old else 0) + _quality_score(visit.confidence), first, last)
 
 
 class MobilityProfileEngine:
@@ -347,16 +341,64 @@ class MobilityProfileEngine:
         _aware(visit.departed_at, "departed_at")
         if visit.departed_at <= visit.arrived_at or visit.duration_seconds <= 0:
             raise ValueError("visit duration must be positive")
-        if visit.visit_id in self.state.seen_visit_ids:
+        if any(item.visit_id == visit.visit_id for item in self.state.visit_evidence):
             return self.state
-        stats = {item.place_id: item for item in self.state.place_statistics}
-        stats[visit.place_id] = _updated_statistics(stats.get(visit.place_id), visit, self.config)
         now = computed_at or visit.departed_at
         _aware(now, "computed_at")
-        seen = (self.state.seen_visit_ids + (visit.visit_id,))[-self.config.deduplication_limit:]
-        self.state = replace(self.state, place_statistics=tuple(sorted(stats.values(), key=lambda x: x.place_id)),
-                             seen_visit_ids=seen, last_computed_at=now)
+        evidence = self.state.visit_evidence + (VisitEvidence(visit.visit_id, visit.place_id,
+            visit.arrived_at, visit.departed_at, visit.duration_seconds, visit.confidence),)
+        self.state = replace(self.state, visit_evidence=evidence, last_computed_at=now)
+        self._apply_retention(now)
+        self._recompute_place_statistics()
         self._compute_place_facts(now)
+        return self.state
+
+    def _apply_retention(self, now: datetime) -> None:
+        cutoff = now - timedelta(days=self.config.retention_days)
+        visits = tuple(item for item in self.state.visit_evidence if item.departed_at >= cutoff)
+        transitions = tuple(item for item in self.state.transition_samples
+                            if item.arrived_at >= cutoff)
+        self.state = replace(self.state, visit_evidence=visits, transition_samples=transitions,
+            seen_visit_ids=tuple(item.visit_id for item in visits)[-self.config.deduplication_limit:],
+            seen_transition_ids=tuple(item.sample_id for item in transitions)[-self.config.deduplication_limit:])
+
+    def _recompute_place_statistics(self) -> None:
+        groups: dict[str, list[VisitEvidence]] = {}
+        for item in self.state.visit_evidence:
+            groups.setdefault(item.place_id, []).append(item)
+        zone = ZoneInfo(self.config.timezone)
+        statistics: list[PlaceStatistics] = []
+        for place_id, items in sorted(groups.items()):
+            items.sort(key=lambda item: (item.arrived_at, item.visit_id))
+            arrivals = tuple(i.arrived_at.astimezone(zone).hour * 60 + i.arrived_at.astimezone(zone).minute for i in items)
+            departures = tuple(i.departed_at.astimezone(zone).hour * 60 + i.departed_at.astimezone(zone).minute for i in items)
+            durations = tuple(i.duration_seconds for i in items)
+            dates = tuple(sorted({i.arrived_at.astimezone(zone).date().isoformat() for i in items}))
+            weekdays = [0] * 7
+            overnight = 0
+            for item in items:
+                weekdays[item.arrived_at.astimezone(zone).weekday()] += 1
+                pseudo = PlaceVisit(item.visit_id, item.place_id, "retained", item.arrived_at,
+                    item.departed_at, item.duration_seconds, None, None, item.confidence)
+                overnight += overnight_seconds(pseudo, self.config) >= self.config.minimum_overnight_seconds
+            first, last = items[0].arrived_at, max(item.departed_at for item in items)
+            observed = max(1, (last.astimezone(zone).date() - first.astimezone(zone).date()).days + 1)
+            total = sum(durations)
+            statistics.append(PlaceStatistics(place_id, len(items), len(dates), observed,
+                round(len(items) / observed * 7, 3), round(len(dates) / observed, 3), total,
+                total / len(items), median(durations), arrivals, departures, durations, dates,
+                tuple(weekdays), sum(weekdays[:5]), sum(weekdays[5:]), overnight,
+                sum(_quality_score(item.confidence) for item in items), first, last))
+        self.state = replace(self.state, place_statistics=tuple(statistics))
+
+    def maintain(self, computed_at: datetime) -> ProfileState:
+        """Apply time-based retention and lifecycle maintenance without new evidence."""
+        _aware(computed_at, "computed_at")
+        self._apply_retention(computed_at)
+        self._recompute_place_statistics()
+        self._compute_place_facts(computed_at)
+        self._compute_transitions(computed_at)
+        self.state = replace(self.state, last_computed_at=computed_at)
         return self.state
 
     def _compute_place_facts(self, now: datetime) -> None:
@@ -365,8 +407,6 @@ class MobilityProfileEngine:
             FactType.TYPICAL_TRANSITION_MODE}]
         facts = transition_facts
         for stat in self.state.place_statistics:
-            if stat.visit_count < self.config.candidate_visits:
-                continue
             quality = stat.quality_sum / stat.visit_count
             q1, q3 = circular_window(stat.arrival_minutes)
             widths = (q3 - q1) % 1440
@@ -374,7 +414,15 @@ class MobilityProfileEngine:
             confidence = _confidence(stat.visit_count, stat.distinct_days, quality, consistency,
                 stat.first_observed_at, stat.last_observed_at, now, 0, self.config)
             status = _status(stat.visit_count, stat.distinct_days, confidence,
-                             stat.last_observed_at, now, self.config)
+                stat.last_observed_at, now, self.config,
+                candidate_samples=self.config.candidate_visits,
+                confirmed_samples=self.config.confirmed_visits,
+                confirmed_days=self.config.confirmed_distinct_days,
+                qualifying_confidence=_confidence(stat.visit_count, stat.distinct_days,
+                    quality, consistency, stat.first_observed_at, stat.last_observed_at,
+                    stat.last_observed_at, 0, self.config))
+            if status is None:
+                continue
             evidence = FactEvidence(stat.visit_count, stat.distinct_days, stat.observed_days,
                 stat.median_dwell_seconds, stat.overnight_count, stat.weekday_count,
                 usable_quality_fraction=round(quality, 3))
@@ -402,11 +450,11 @@ class MobilityProfileEngine:
     def rebuild(self, visits: Iterable[PlaceVisit], *, computed_at: datetime | None = None) -> ProfileState:
         ordered = sorted(visits, key=lambda v: (v.arrived_at, v.visit_id))
         self.state = ProfileState()
+        final_now = computed_at or (ordered[-1].departed_at if ordered else None)
         for visit in ordered:
-            self.process_visit(visit, computed_at=computed_at or visit.departed_at)
-        if computed_at and ordered:
-            self._compute_place_facts(computed_at)
-            self.state = replace(self.state, last_computed_at=computed_at)
+            self.process_visit(visit, computed_at=final_now or visit.departed_at)
+        if final_now:
+            self.maintain(final_now)
         return self.state
 
     def process_transition(self, departure: PlaceVisit, arrival: PlaceVisit,
@@ -430,7 +478,7 @@ class MobilityProfileEngine:
         if (coverage_start - started).total_seconds() > 300 or (ended - coverage_end).total_seconds() > 300:
             return self.state
         sample_id = _id("transition-sample", departure.visit_id, arrival.visit_id)
-        if sample_id in self.state.seen_transition_ids:
+        if any(item.sample_id == sample_id for item in self.state.transition_samples):
             return self.state
         weighted: dict[MovementMode, float] = {}
         for segment in relevant:
@@ -441,11 +489,10 @@ class MobilityProfileEngine:
                                      DataQuality.LIMITED: 2, DataQuality.GOOD: 3}[q])
         sample = TransitionSample(sample_id, departure.place_id, arrival.place_id,
                                   started, ended, duration, mode, quality)
-        samples = (self.state.transition_samples + (sample,))[-self.config.retention_days * 20:]
-        seen = (self.state.seen_transition_ids + (sample_id,))[-self.config.deduplication_limit:]
+        samples = self.state.transition_samples + (sample,)
         now = computed_at or ended
-        self.state = replace(self.state, transition_samples=samples,
-                             seen_transition_ids=seen, last_computed_at=now)
+        self.state = replace(self.state, transition_samples=samples, last_computed_at=now)
+        self._apply_retention(now)
         self._compute_transitions(now)
         return self.state
 
@@ -459,8 +506,6 @@ class MobilityProfileEngine:
             FactType.TYPICAL_TRANSITION_MODE}]
         zone = ZoneInfo(self.config.timezone)
         for (source, target), samples in sorted(groups.items()):
-            if len(samples) < self.config.transition_minimum_samples:
-                continue
             durations = [sample.duration_seconds for sample in samples]
             q1, q3 = _quantile(durations, .25), _quantile(durations, .75)
             iqr = max(1, q3 - q1)
@@ -480,7 +525,14 @@ class MobilityProfileEngine:
             last = max(sample.arrived_at for sample in samples)
             confidence = _confidence(len(samples), days, quality, consistency, first, last,
                                      now, outliers, self.config)
-            status = _status(len(samples), days, confidence, last, now, self.config)
+            status = _status(len(samples), days, confidence, last, now, self.config,
+                candidate_samples=self.config.transition_minimum_samples,
+                confirmed_samples=self.config.transition_confirmed_samples,
+                confirmed_days=self.config.transition_confirmed_distinct_days,
+                qualifying_confidence=_confidence(len(samples), days, quality, consistency,
+                    first, last, last, outliers, self.config))
+            if status is None:
+                continue
             transition_id = _id("transition", source, target)
             pattern = PlaceTransitionPattern(transition_id, source, target, len(samples), first,
                 last, median(durations), mode, confidence, status, (q1, q3), tuple(weekdays))

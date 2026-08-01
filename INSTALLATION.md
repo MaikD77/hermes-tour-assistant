@@ -278,3 +278,6 @@ explizite Zone startet die Engine absichtlich nicht. Alle Schwellen stehen in
 `profilectl.py reset` löscht ausschließlich den Profil-State. Mit
 `forget-place PLACE_ID` verschwinden Place-Facts und Transitionen beider
 Richtungen; Location-, Movement-, Place-, Tour- und City-State bleiben erhalten.
+Ein späterer `profilectl.py rebuild` darf einen nur im Profil vergessenen Place
+aus retained PlaceVisits wieder lernen. Für dauerhaftes Vergessen zuerst
+`placectl.py forget PLACE_ID` ausführen und anschließend das Profil rebuilden.

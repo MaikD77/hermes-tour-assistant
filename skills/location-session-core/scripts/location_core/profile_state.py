@@ -18,19 +18,26 @@ from .profile import (
     PlaceTransitionPattern,
     ProfileState,
     TransitionSample,
+    VisitEvidence,
 )
 from .repository import JsonStateRepository
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+
+class ProfileRebuildRequired(RuntimeError):
+    """Legacy aggregates cannot provide correct time-based retention evidence."""
 
 
 def empty_state() -> dict[str, Any]:
-    return {"schema_version": SCHEMA_VERSION, "profile": None}
+    return {"schema_version": SCHEMA_VERSION, "profile": None, "rebuild_required": False}
 
 
 def migrate_state(raw: dict[str, Any]) -> dict[str, Any]:
     if raw.get("schema_version", 0) == 0 and not raw.get("profile"):
         return empty_state()
+    if raw.get("schema_version") == 1:
+        return {"schema_version": SCHEMA_VERSION, "profile": None, "rebuild_required": True}
     if raw.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("unsupported profile state schema")
     return raw
@@ -98,8 +105,12 @@ def decode_state(raw: dict[str, Any]) -> ProfileState:
         MovementMode(item["typical_mode"]), float(item["confidence"]), FactStatus(item["status"]),
         tuple(item["duration_range_seconds"]), tuple(item["weekday_distribution"]))
         for item in raw.get("transitions", []))
+    visits = tuple(VisitEvidence(item["visit_id"], item["place_id"],
+        _required_dt(item["arrived_at"]), _required_dt(item["departed_at"]),
+        float(item["duration_seconds"]), float(item["confidence"]))
+        for item in raw.get("visit_evidence", []))
     return ProfileState(int(raw.get("schema_version", SCHEMA_VERSION)), facts, transitions,
-        statistics, samples, tuple(raw.get("seen_visit_ids", [])),
+        statistics, samples, visits, tuple(raw.get("seen_visit_ids", [])),
         tuple(raw.get("seen_transition_ids", [])), _dt(raw.get("last_computed_at")))
 
 
@@ -110,10 +121,13 @@ class ProfileStateRepository:
 
     def load(self) -> ProfileState:
         raw = self.repository.load()
+        if raw.get("rebuild_required") is True:
+            raise ProfileRebuildRequired("profile rebuild required after schema v1 migration")
         return ProfileState() if raw.get("profile") is None else decode_state(raw["profile"])
 
     def save(self, state: ProfileState) -> None:
-        self.repository.save({"schema_version": SCHEMA_VERSION, "profile": encode_state(state)})
+        self.repository.save({"schema_version": SCHEMA_VERSION, "profile": encode_state(state),
+                              "rebuild_required": False})
 
     def reset(self) -> None:
         self.repository.save(empty_state())
@@ -132,6 +146,10 @@ class ProfileStateRepository:
                               if place_id not in (p.from_place_id, p.to_place_id)),
             place_statistics=tuple(s for s in state.place_statistics if s.place_id != place_id),
             transition_samples=tuple(s for s in state.transition_samples
+                if place_id not in (s.from_place_id, s.to_place_id)),
+            visit_evidence=tuple(v for v in state.visit_evidence if v.place_id != place_id),
+            seen_visit_ids=tuple(v.visit_id for v in state.visit_evidence if v.place_id != place_id),
+            seen_transition_ids=tuple(s.sample_id for s in state.transition_samples
                 if place_id not in (s.from_place_id, s.to_place_id)))
         self.save(state)
         return True
@@ -139,6 +157,7 @@ class ProfileStateRepository:
     def export(self) -> dict[str, Any]:
         state = self.load()
         raw = encode_state(replace(state, transition_samples=()))
+        raw.pop("visit_evidence", None)
         raw.pop("seen_visit_ids", None)
         raw.pop("seen_transition_ids", None)
         return raw

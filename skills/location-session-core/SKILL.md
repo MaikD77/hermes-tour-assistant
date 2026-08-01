@@ -83,3 +83,14 @@ transition patterns and bounded deduplication only, never tracks or coordinates.
 `profilectl.py` provides `status`, `facts`, `transitions`, `explain`, `export`,
 `forget-place`, `rebuild`, `reset`, and `diagnose`. Forgetting removes dependent
 facts and both transition directions. Reset affects only profile state.
+
+Candidate facts require both candidate samples and candidate confidence;
+confirmed facts additionally require confirmed samples, distinct days and
+confirmed confidence. Transition candidacy/confirmation uses dedicated
+transition thresholds. Retention uses the inclusive cutoff
+`computed_at - HERMES_PROFILE_RETENTION_DAYS`; all statistics are reconstructed
+from coordinate-free visit/transition evidence within that window.
+
+`profile forget-place` does not modify Place state. Consequently an intentional
+later `profile rebuild` can learn the place again from retained PlaceVisits. To
+forget it across layers, run `place forget` first and then rebuild the profile.

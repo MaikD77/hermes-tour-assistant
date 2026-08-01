@@ -15,7 +15,7 @@ from location_core.profile import (
     circular_window,
     overnight_seconds,
 )
-from location_core.profile_state import ProfileStateRepository
+from location_core.profile_state import ProfileRebuildRequired, ProfileStateRepository
 from location_core.repository import CorruptStateError
 
 
@@ -213,3 +213,141 @@ def test_lock_file_is_private(tmp_path) -> None:
     repo = ProfileStateRepository(tmp_path)
     repo.load()
     assert (os.stat(tmp_path / "profile-state.json.lock").st_mode & 0o777) == 0o600
+
+
+def _place_fact_confidence(visits: list[PlaceVisit]) -> float:
+    engine = MobilityProfileEngine(config(candidate_confidence=0))
+    for item in visits:
+        engine.process_visit(item)
+    return next(f for f in engine.state.facts if f.fact_type is FactType.FREQUENT_PLACE).confidence
+
+
+@pytest.mark.parametrize("offset,visible", [(.001, False), (0, True), (-.001, True)])
+def test_candidate_confidence_boundary(offset: float, visible: bool) -> None:
+    visits = [visit(i) for i in range(3)]
+    threshold = _place_fact_confidence(visits) + offset
+    engine = MobilityProfileEngine(config(candidate_confidence=threshold,
+        confirmed_confidence=max(threshold, .99)))
+    for item in visits:
+        engine.process_visit(item)
+    assert bool(engine.state.facts) is visible
+
+
+def test_candidate_requires_samples_and_confidence_independently() -> None:
+    enough_samples = MobilityProfileEngine(config(candidate_confidence=.99, confirmed_confidence=.99))
+    for number in range(3):
+        enough_samples.process_visit(visit(number))
+    assert not enough_samples.state.facts
+    too_few_samples = MobilityProfileEngine(config(candidate_visits=4, candidate_confidence=0))
+    for number in range(3):
+        too_few_samples.process_visit(visit(number))
+    assert not too_few_samples.state.facts
+
+
+def test_confirmation_requires_distinct_days_and_full_evidence() -> None:
+    same_day = MobilityProfileEngine(config(candidate_confidence=0, confirmed_confidence=0))
+    for hour in range(5):
+        same_day.process_visit(visit(0, hour=8 + hour))
+    assert {f.status for f in same_day.state.facts} == {FactStatus.CANDIDATE}
+    complete = MobilityProfileEngine(config(candidate_confidence=0, confirmed_confidence=0))
+    for number in range(5):
+        complete.process_visit(visit(number))
+    assert {f.status for f in complete.state.facts} == {FactStatus.CONFIRMED}
+
+
+def test_transition_candidate_and_confirmed_use_transition_thresholds() -> None:
+    cfg = config(candidate_visits=20, confirmed_visits=30, candidate_confidence=0,
+        confirmed_confidence=0, transition_minimum_samples=2,
+        transition_confirmed_samples=4, transition_confirmed_distinct_days=3)
+    engine = MobilityProfileEngine(cfg)
+    for number in range(2):
+        a, b = visit(number, "A"), visit(number, "B", hour=10)
+        engine.process_transition(a, b, [segment(number, a.departed_at, 3600)])
+    assert {f.status for f in engine.state.facts} == {FactStatus.CANDIDATE}
+    for number in range(2, 4):
+        a, b = visit(number, "A"), visit(number, "B", hour=10)
+        engine.process_transition(a, b, [segment(number, a.departed_at, 3600)])
+    assert {f.status for f in engine.state.facts} == {FactStatus.CONFIRMED}
+
+
+def test_time_retention_cutoff_is_inclusive_and_aggregates_shrink() -> None:
+    now = datetime(2026, 2, 1, 12, tzinfo=UTC)
+    cfg = config(retention_days=10, candidate_visits=1, candidate_confidence=0)
+    cutoff = now - timedelta(days=10)
+    def at_departure(identifier: str, departed: datetime) -> PlaceVisit:
+        arrived = departed - timedelta(hours=1)
+        return PlaceVisit(identifier, "A", identifier, arrived, departed, 3600, None, None, .9)
+    items = [at_departure("before", cutoff - timedelta(microseconds=1)),
+             at_departure("exact", cutoff), at_departure("after", cutoff + timedelta(seconds=1))]
+    state = MobilityProfileEngine(cfg).rebuild(items, computed_at=now)
+    assert [item.visit_id for item in state.visit_evidence] == ["exact", "after"]
+    assert state.place_statistics[0].visit_count == 2
+    assert state.place_statistics[0].total_dwell_seconds == 7200
+
+
+def test_retention_handles_sparse_years_and_dense_days() -> None:
+    now = datetime(2026, 1, 10, tzinfo=UTC)
+    cfg = config(retention_days=30, candidate_visits=1, candidate_confidence=0)
+    sparse = [PlaceVisit(f"old-{year}", "place_A", f"old-stay-{year}",
+        datetime(year, 1, 1, 8, tzinfo=UTC), datetime(year, 1, 1, 9, tzinfo=UTC),
+        3600, None, None, .9) for year in (2022, 2023, 2024)]
+    dense = [visit(i, hour=hour, base=datetime(2026, 1, 1, tzinfo=UTC))
+             for i in range(3) for hour in range(8, 18)]
+    state = MobilityProfileEngine(cfg).rebuild(sparse + dense, computed_at=now)
+    assert state.place_statistics[0].visit_count == 30
+    assert not {item.visit_id for item in state.visit_evidence} & {item.visit_id for item in sparse}
+
+
+def test_retention_removes_expired_facts_and_transition_patterns() -> None:
+    cfg = config(retention_days=5, candidate_visits=1, candidate_confidence=0,
+        transition_minimum_samples=1, transition_confirmed_samples=1,
+        transition_confirmed_distinct_days=1)
+    engine = MobilityProfileEngine(cfg)
+    a, b = visit(0, "A"), visit(0, "B", hour=10)
+    engine.process_visit(a)
+    engine.process_transition(a, b, [segment(0, a.departed_at, 3600)])
+    assert engine.state.facts and engine.state.transitions
+    engine.maintain(b.departed_at + timedelta(days=6))
+    assert not engine.state.facts and not engine.state.transitions
+    assert not engine.state.place_statistics
+
+
+def test_incremental_equals_rebuild_at_same_retention_cutoff() -> None:
+    now = datetime(2026, 2, 1, tzinfo=UTC)
+    cfg = config(retention_days=10)
+    visits = [visit(i, base=datetime(2026, 1, 1, tzinfo=UTC)) for i in range(25)]
+    incremental = MobilityProfileEngine(cfg)
+    for item in visits:
+        incremental.process_visit(item)
+    incremental.maintain(now)
+    rebuilt = MobilityProfileEngine(cfg).rebuild(visits, computed_at=now)
+    assert incremental.state == rebuilt
+
+
+def test_forget_removes_dedup_evidence_and_allows_relearning(tmp_path) -> None:
+    repo = ProfileStateRepository(tmp_path)
+    engine = MobilityProfileEngine(config(candidate_visits=1, candidate_confidence=0))
+    a, b = visit(0, "A"), visit(0, "B", hour=10)
+    engine.process_visit(a)
+    engine.process_visit(b)
+    engine.process_transition(a, b, [segment(0, a.departed_at, 3600)])
+    repo.save(engine.state)
+    assert repo.forget_place("A")
+    forgotten = repo.load()
+    assert all(item.place_id != "A" for item in forgotten.visit_evidence)
+    assert a.visit_id not in forgotten.seen_visit_ids
+    assert not forgotten.transitions and not any("A" in json.dumps(f.value) for f in forgotten.facts)
+    assert any(item.place_id == "B" for item in forgotten.place_statistics)
+    relearned = MobilityProfileEngine(config(candidate_visits=1, candidate_confidence=0), forgotten)
+    relearned.process_visit(a)
+    assert any(item.place_id == "A" for item in relearned.state.place_statistics)
+    assert MobilityProfileEngine(config(candidate_visits=1, candidate_confidence=0)).rebuild([a, b]) == \
+        MobilityProfileEngine(config(candidate_visits=1, candidate_confidence=0)).rebuild([a, b])
+
+
+def test_profile_v1_requires_controlled_rebuild(tmp_path) -> None:
+    path = tmp_path / "profile-state.json"
+    tmp_path.mkdir(exist_ok=True)
+    path.write_text(json.dumps({"schema_version": 1, "profile": {"place_statistics": []}}))
+    with pytest.raises(ProfileRebuildRequired, match="rebuild required"):
+        ProfileStateRepository(tmp_path).load()

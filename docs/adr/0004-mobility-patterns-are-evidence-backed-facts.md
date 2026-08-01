@@ -51,6 +51,11 @@ changes.
 Schema v1 starts empty; schema-zero empty state migrates deterministically.
 Offline rebuild uses retained abstract visits. Lower states remain unchanged.
 
+Schema v2 replaces lifetime aggregates with coordinate-free, time-stamped visit
+evidence. Because schema v1 cannot be losslessly assigned to a retention window,
+loading it returns an explicit rebuild-required condition rather than treating
+legacy totals as current evidence. Rebuild then uses retained PlaceVisits.
+
 ## Deferred intentionally
 Home/work and semantic names, geocoding, OSM/Wikipedia, calendar/Gmail,
 destination prediction, active context/notification engines, proactive
