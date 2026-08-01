@@ -22,6 +22,27 @@ und optionaler Telegram-Voice-Bubble.
 
 ## Stand: Version 1.4.1
 
+### Sprint 6: read-only Kalenderkontext
+
+Der optionale `CalendarProvider` trennt Google-spezifische Payloads strikt vom
+fachlichen `CalendarEvent`. Der Offline-`ReplayCalendarProvider` und der
+`GoogleCalendarProvider` liefern ausschließlich minimierte, unveränderliche Ereignisse an den
+deterministischen `CalendarContextEngine`. Der Provider ist standardmäßig deaktiviert, fragt
+nur explizite Calendar IDs ab und besitzt keinerlei Schreib-, Nachrichten- oder
+Decision-Funktion. `CurrentContext` bleibt ohne Kalender vollständig kompatibel; bei Aktivierung
+wird `calendar_context` als eigener Teilkontext mit eigener Confidence ergänzt.
+
+`CalendarContext` unterscheidet aktuelle (`start <= now < end`), unmittelbar folgende und
+begrenzt zurückliegende Ereignisse. Cancelled und abgelehnte Ereignisse (außer selbst
+organisierten) sind inaktiv; Busy wird vor Free und Confirmed vor Tentative sortiert. Parallel
+laufende Events bleiben sichtbar. Technische Traits beschreiben nur Kalenderzustände und leiten
+weder ETA, Verspätung, Absicht, Benachrichtigung noch Aktion ab.
+
+Die CLI `calendarctl.py` bietet `status`, `fetch`, `current`, `upcoming`, `conflicts`, `explain`,
+`export`, `diagnose` und `reset`. `fetch` ist read-only; `reset` löscht ausschließlich den letzten
+sanitisierten Kalendersnapshot. Details stehen in
+[`docs/architecture/calendar-context.md`](docs/architecture/calendar-context.md).
+
 **Neu in 1.4.1 — Weather Hunter 🌤️ & Mobile-Optimierung 📱 & TTS-Sprachausgabe 🎧**
 - Stündliche Niederschlagsvorhersage via Open-Meteo
 - Berechnet ob du dem Regen davonfahren kannst ("Noch 15 min bis Regen — bei 28 km/h schaffst du's!")

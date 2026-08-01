@@ -5,10 +5,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from location_core.calendar_context import CalendarContextEngine
+from location_core.calendar_factory import (
+    build_calendar_provider,
+    context_config_from_env,
+)
 from location_core.context import ContextConfig, CurrentContextEngine
 from location_core.context_inputs import ContextInputLoader
 from location_core.context_state import SCHEMA_VERSION, ContextStateRepository
@@ -44,9 +50,20 @@ def compute_context(config: ContextConfig, *, now: datetime,
     input_loader = loader or ContextInputLoader(config)
     bundle = input_loader.load(now=now)
     engine = CurrentContextEngine(config)
+    calendar_context = None
+    if os.environ.get("HERMES_CONTEXT_CALENDAR_ENABLED", "false").lower() == "true":
+        lookback = int(os.environ.get("HERMES_CALENDAR_LOOKBACK_MINUTES", "120"))
+        lookahead = int(os.environ.get("HERMES_CALENDAR_LOOKAHEAD_HOURS", "24"))
+        start, end = now - timedelta(minutes=lookback), now + timedelta(hours=lookahead)
+        provider = build_calendar_provider(env=os.environ, clock=lambda: now)
+        provider_result = provider.list_events(window_start=start, window_end=end)
+        calendar_context = CalendarContextEngine(context_config_from_env(os.environ)).compute(
+            provider_result=provider_result,
+            computed_at=now, window_start=start, window_end=end)
     result = engine.compute(observation=bundle.observation,
         movement_state=bundle.movement_state, place_state=bundle.place_state,
-        profile_state=bundle.profile_state, computed_at=now, input_issues=bundle.issues)
+        profile_state=bundle.profile_state, calendar_context=calendar_context,
+        computed_at=now, input_issues=bundle.issues)
     (repository or ContextStateRepository(config.state_dir)).save(result.context)
     return engine.export(result.context)
 

@@ -9,6 +9,10 @@ description = "Private, location-aware outdoor and city-walk assistants for Herm
 requires-python = ">=3.11"
 
 [project.optional-dependencies]
+calendar = [
+  "google-api-python-client>=2.140,<3",
+  "google-auth>=2.30,<3",
+]
 receiver = [
   "fastapi>=0.110,<1",
   "uvicorn[standard]>=0.29,<1",
@@ -51,6 +55,7 @@ py-modules = []
   "skills/location-session-core/scripts/placectl.py",
   "skills/location-session-core/scripts/profilectl.py",
   "skills/location-session-core/scripts/contextctl.py",
+  "skills/location-session-core/scripts/calendarctl.py",
 ]
 "share/hermes-tour-assistant/skills/city-walk-guide" = [
   "skills/city-walk-guide/SKILL.md",

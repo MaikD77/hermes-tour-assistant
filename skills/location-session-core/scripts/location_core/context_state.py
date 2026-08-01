@@ -8,7 +8,7 @@ from typing import Any
 from .context import CurrentContext, CurrentContextEngine
 from .repository import JsonStateRepository
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def empty_state() -> dict[str, Any]:
@@ -18,6 +18,10 @@ def empty_state() -> dict[str, Any]:
 def migrate_state(raw: dict[str, Any]) -> dict[str, Any]:
     if raw.get("schema_version", 0) == 0 and not raw.get("last_context"):
         return empty_state()
+    if raw.get("schema_version") == 1 and isinstance(raw.get("last_context"), dict):
+        raw = dict(raw)
+        raw["schema_version"] = SCHEMA_VERSION
+        raw["last_context"] = dict(raw["last_context"], calendar_context=None)
     if raw.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("unsupported context state schema")
     return raw
