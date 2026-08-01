@@ -94,3 +94,25 @@ from coordinate-free visit/transition evidence within that window.
 `profile forget-place` does not modify Place state. Consequently an intentional
 later `profile rebuild` can learn the place again from retained PlaceVisits. To
 forget it across layers, run `place forget` first and then rebuild the profile.
+
+## Current context snapshot
+
+`location_core.context.CurrentContextEngine` is the read-only top layer:
+`LocationObservation → Movement → Place/Stay → Mobility Profile → Current Context`.
+It accepts only those typed abstractions and produces immutable location,
+movement, place, profile and timezone-aware temporal subcontexts. Coordinate-free
+evidence, uncertainties and traits explain every result. Missing, stale and
+conflicting inputs produce typed statuses rather than guessed substitutes.
+
+Freshness thresholds are component-specific and centrally configured. Confidence
+weights Location 35%, Movement 25%, Place 25% and Profile 15%, then applies
+freshness/quality factors, a bounded independent-layer bonus, and explicit gap,
+uncertainty or conflict deductions. Traits remain technical (`currently_moving`,
+known/candidate-place presence, frequency and cyclic time-window matches); roles
+such as home/work, destination prediction and notification decisions are forbidden.
+
+`contextctl.py` provides `status`, `compute`, `explain`, `export`, `diagnose` and
+context-only `reset`. It optionally stores exactly one sanitized snapshot via the
+private atomic repository. Diagnose always reports Shadow Mode, provider calls
+false and delivery false. Never add coordinates, raw provider data or semantic
+place labels to this contract.

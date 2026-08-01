@@ -281,3 +281,29 @@ Richtungen; Location-, Movement-, Place-, Tour- und City-State bleiben erhalten.
 Ein späterer `profilectl.py rebuild` darf einen nur im Profil vergessenen Place
 aus retained PlaceVisits wieder lernen. Für dauerhaftes Vergessen zuerst
 `placectl.py forget PLACE_ID` ausführen und anschließend das Profil rebuilden.
+
+## Current Context Shadow Mode
+
+Setze mindestens `HERMES_PROFILE_TIMEZONE` oder explizit
+`HERMES_CONTEXT_TIMEZONE` auf eine IANA-Zeitzone. Alle Schwellen sind in
+`.env.example` dokumentiert. Der Kontext-CLI liest ausschließlich bestehende
+untere States und führt keine Provideraufrufe aus:
+
+Fehlen beide Zeitzonenvariablen, bricht der Start mit einem Konfigurationsfehler
+ab; ein stilles UTC-Fallback findet nicht statt. Die aktuelle Location wird über
+die gemeinsame `LocationSourceResolver`-Kette und
+`HERMES_LOCATION_SOURCE_ORDER` geladen. OwnTracks-/Telegram-Payloads bleiben
+vollständig innerhalb ihrer Adapter.
+
+```bash
+python3 skills/location-session-core/scripts/contextctl.py compute
+python3 skills/location-session-core/scripts/contextctl.py status
+python3 skills/location-session-core/scripts/contextctl.py explain
+python3 skills/location-session-core/scripts/contextctl.py export
+python3 skills/location-session-core/scripts/contextctl.py diagnose
+python3 skills/location-session-core/scripts/contextctl.py reset
+```
+
+`reset` entfernt nur den letzten Context-Snapshot. Location-, Movement-, Place-
+und Profile-State bleiben unverändert. Das Context-Verzeichnis wird mit `0700`,
+State und Lock mit `0600` angelegt; Writes sind gesperrt und atomar.

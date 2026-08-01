@@ -50,6 +50,7 @@ py-modules = []
   "skills/location-session-core/scripts/movementctl.py",
   "skills/location-session-core/scripts/placectl.py",
   "skills/location-session-core/scripts/profilectl.py",
+  "skills/location-session-core/scripts/contextctl.py",
 ]
 "share/hermes-tour-assistant/skills/city-walk-guide" = [
   "skills/city-walk-guide/SKILL.md",

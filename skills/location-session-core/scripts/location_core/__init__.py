@@ -1,5 +1,23 @@
 """Shared runtime primitives for Hermes location-aware skills."""
 
+from .context import (
+    ContextConfig,
+    ContextEvidence,
+    ContextResult,
+    ContextStatus,
+    ContextTrait,
+    ContextUncertainty,
+    CurrentContext,
+    CurrentContextEngine,
+    Freshness,
+    FreshnessThresholds,
+)
+from .context_inputs import (
+    ContextInputBundle,
+    ContextInputIssue,
+    ContextInputLoader,
+    build_location_source_resolver,
+)
 from .contracts import (
     AlertDecision,
     GateDecision,
@@ -60,6 +78,20 @@ StateRepository = JsonStateRepository
 __all__ = [
     "AlertDecision",
     "CorruptStateError",
+    "ContextConfig",
+    "ContextEvidence",
+    "ContextInputBundle",
+    "ContextInputIssue",
+    "ContextInputLoader",
+    "ContextResult",
+    "ContextStatus",
+    "ContextTrait",
+    "ContextUncertainty",
+    "CurrentContext",
+    "CurrentContextEngine",
+    "Freshness",
+    "FreshnessThresholds",
+    "build_location_source_resolver",
     "GateDecision",
     "JsonStateRepository",
     "LocationSample",

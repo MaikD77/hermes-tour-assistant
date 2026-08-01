@@ -114,3 +114,18 @@ Transition-Muster und bounded Deduplizierungs-IDs—keine Koordinaten, Rohpayloa
 oder vollständigen Routen. Export, Explain und Diagnose sind koordinatenfrei.
 Retention begrenzt Evidenz; Staleness allein löscht nichts. Forget und Reset
 sind explizite Nutzeraktionen.
+
+## Sensibler aktueller Kontext
+
+Ein `CurrentContext` kann Bewegungsmodus, pseudonyme Place-/Fact-IDs und zeitliche
+Gewohnheiten verbinden und ist daher hochsensibel. Das Modell minimiert Daten:
+keine Koordinaten, Rohpayloads, Adressen, semantischen Place-Namen oder kompletten
+Tracks. Export, Explain, Diagnose und der optionale letzte Snapshot verwenden
+dasselbe sanitisierte Modell. Es gibt keine Snapshot-Historie. Der Context-State
+nutzt Locking, atomaren Replace, private Rechte, Symlink-Schutz, Quarantäne und
+isolierten Reset aus `JsonStateRepository`.
+
+Die Engine läuft im Shadow Mode: Provideraufrufe und Delivery sind `false`.
+Evidence verweist nur auf IDs und abstrahierte Zustände; widerrufene Profil-Facts
+werden verworfen und stale Facts ausdrücklich abgeschwächt. Ein Debug-Modus mit
+Koordinaten existiert absichtlich nicht.
