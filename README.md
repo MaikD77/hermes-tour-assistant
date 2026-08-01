@@ -336,3 +336,35 @@ Diagnose und Events zeigen keine Koordinaten. `placectl.py
 status|list|visits|diagnose|replay|forget|reset` betrifft nur Place-State. Sprint
 3 bleibt ohne Benachrichtigungen im Shadow Mode. Details: [ADR
 0003](docs/adr/0003-repeated-stays-form-deterministic-private-places.md).
+
+## Persönliches Mobilitätsprofil (Sprint 4)
+
+Die ausschließlich im **Shadow Mode** laufende `MobilityProfileEngine` ergänzt
+Location → Movement → Place/Stay um deterministische Langzeitmuster. Sie erzeugt
+belegte Facts wie `frequent_place`, `frequent_overnight_place`, typische
+Zeitfenster und `frequent_transition`—niemals „home“, „work“ oder „commute“.
+
+Jeder Fact enthält Evidence, Confidence, Samples, Beobachtungszeitraum und den
+Lebenszyklus candidate → confirmed → stale → revoked. Nachtzeiten und zyklische
+Fenster verwenden `HERMES_PROFILE_TIMEZONE` einschließlich DST. Der private,
+koordinatenfreie State unterstützt atomare Writes, Locking, Quarantäne,
+Retention/Deduplizierung, Forget, Reset und sanitisierten Export.
+
+```bash
+HERMES_PROFILE_TIMEZONE=Europe/Berlin python skills/location-session-core/scripts/profilectl.py status
+HERMES_PROFILE_TIMEZONE=Europe/Berlin python skills/location-session-core/scripts/profilectl.py facts
+HERMES_PROFILE_TIMEZONE=Europe/Berlin python skills/location-session-core/scripts/profilectl.py explain FACT_ID
+HERMES_PROFILE_TIMEZONE=Europe/Berlin python skills/location-session-core/scripts/profilectl.py export
+```
+
+Rollout: Unit Tests → synthetische Replays → Offline-Rebuild → Shadow Mode →
+mehrwöchige Profilbildung → Nutzerprüfung des Exports → erst danach mögliche
+semantische Kontextinterpretation.
+
+Candidate-Facts werden erst sichtbar, wenn Sample- **und** Confidence-Schwelle
+erreicht sind; Confirmed verlangt zusätzlich Confirmed-Samples und unabhängige
+Tage. Retention ist eine echte Zeitspanne ab `computed_at`: alle Aggregate
+werden ausschließlich aus koordinatenfreier Evidenz innerhalb des Fensters neu
+gebildet. `profile forget-place` vergisst nur im Profil; ein Rebuild kann aus
+dem unveränderten Place-State neu lernen. Dauerhaftes schichtübergreifendes
+Vergessen erfordert zuerst `place forget`.

@@ -103,3 +103,14 @@ Migration und Quarantäne gelten unverändert.
 `place forget <place_id>` löscht Cluster und Visits; `place reset` löscht den
 gesamten Place-State, aber keinen Movement-, OwnTracks-, Tour- oder City-State.
 Private Backups müssen Betreiber separat löschen.
+
+## Mobility-profile privacy
+
+Das Mobilitätsprofil liegt getrennt unter `HERMES_PROFILE_STATE_DIR`
+(Verzeichnis 0700, Dateien/Locks 0600), wird gesperrt und atomar ersetzt,
+verweigert Symlinks und quarantänisiert beschädigtes JSON. Gespeichert werden
+nur aggregierte Place-Zähler, begrenzte Zeit-/Dauer-Samples, Facts, Evidence,
+Transition-Muster und bounded Deduplizierungs-IDs—keine Koordinaten, Rohpayloads
+oder vollständigen Routen. Export, Explain und Diagnose sind koordinatenfrei.
+Retention begrenzt Evidenz; Staleness allein löscht nichts. Forget und Reset
+sind explizite Nutzeraktionen.
