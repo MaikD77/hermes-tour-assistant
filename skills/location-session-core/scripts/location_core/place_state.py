@@ -20,7 +20,7 @@ from .place import (
 )
 from .repository import JsonStateRepository
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def empty_state() -> dict[str, Any]:
@@ -31,6 +31,26 @@ def migrate_state(raw: dict[str, Any]) -> dict[str, Any]:
     version = raw.get("schema_version", 0)
     if version == 0 and not raw.get("engine"):
         return empty_state()
+    if version == 1:
+        engine = raw.get("engine")
+        if not isinstance(engine, dict):
+            raise ValueError("legacy place engine state must be an object")
+        engine = dict(engine)
+        engine["schema_version"] = SCHEMA_VERSION
+        for name in ("candidate", "active_stay"):
+            value = engine.get(name)
+            if not isinstance(value, dict):
+                continue
+            accumulator = dict(value)
+            quality = accumulator.get("stay", {}).get("data_quality")
+            count = int(accumulator.get("stay", {}).get("observation_count", 0))
+            accumulator.setdefault("good_quality_count", count if quality == "good" else 0)
+            accumulator.setdefault("limited_quality_count", count if quality == "limited" else 0)
+            accumulator.setdefault("poor_quality_count", count if quality == "poor" else 0)
+            accumulator["departure_observed_at"] = accumulator.pop("outside_since", None)
+            accumulator["departure_mode"] = accumulator.pop("outside_mode", None)
+            engine[name] = accumulator
+        return {"schema_version": SCHEMA_VERSION, "engine": engine}
     if version != SCHEMA_VERSION:
         raise ValueError("unsupported place state schema")
     return raw
@@ -100,9 +120,12 @@ def _stay(raw: dict[str, Any]) -> Stay:
 def _accumulator(raw: dict[str, Any] | None) -> CandidateAccumulator | None:
     if not raw:
         return None
-    return CandidateAccumulator(_stay(raw["stay"]), float(raw["latitude_sum"]),
-                                float(raw["longitude_sum"]), _dt(raw.get("outside_since")),
-                                MovementMode(raw["outside_mode"]) if raw.get("outside_mode") else None)
+    return CandidateAccumulator(
+        _stay(raw["stay"]), float(raw["latitude_sum"]), float(raw["longitude_sum"]),
+        int(raw.get("good_quality_count", 0)), int(raw.get("limited_quality_count", 0)),
+        int(raw.get("poor_quality_count", 0)), _dt(raw.get("departure_observed_at")),
+        MovementMode(raw["departure_mode"]) if raw.get("departure_mode") else None,
+    )
 
 
 def decode_engine(raw: dict[str, Any]) -> PlaceEngineState:

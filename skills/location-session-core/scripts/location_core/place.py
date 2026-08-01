@@ -174,19 +174,60 @@ class PlaceConfig:
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> PlaceConfig:
         defaults = cls()
+
         def number(name: str, default: float) -> float:
             try:
                 return float(env.get(name, default))
             except ValueError as error:
                 raise ValueError(f"{name} must be numeric") from error
+
+        def integer(name: str, default: int) -> int:
+            raw = env.get(name)
+            if raw is None:
+                return default
+            try:
+                return int(raw)
+            except ValueError as error:
+                raise ValueError(f"{name} must be an integer") from error
+
+        state_dir = env.get("HERMES_PLACE_STATE_DIR", str(defaults.state_dir)).strip()
+        if not state_dir:
+            raise ValueError("HERMES_PLACE_STATE_DIR must not be empty")
         return cls(
             stay_radius_m=number("HERMES_PLACE_STAY_RADIUS_M", defaults.stay_radius_m),
             candidate_seconds=number("HERMES_PLACE_CANDIDATE_SECONDS", defaults.candidate_seconds),
             confirmed_seconds=number("HERMES_PLACE_CONFIRMED_SECONDS", defaults.confirmed_seconds),
+            minimum_observations=integer(
+                "HERMES_PLACE_MINIMUM_OBSERVATIONS", defaults.minimum_observations
+            ),
             departure_radius_m=number("HERMES_PLACE_DEPARTURE_RADIUS_M", defaults.departure_radius_m),
             departure_confirmation_seconds=number("HERMES_PLACE_DEPARTURE_SECONDS", defaults.departure_confirmation_seconds),
             match_radius_m=number("HERMES_PLACE_MATCH_RADIUS_M", defaults.match_radius_m),
-            state_dir=Path(env.get("HERMES_PLACE_STATE_DIR", str(defaults.state_dir))),
+            maximum_accuracy_m=number(
+                "HERMES_PLACE_MAXIMUM_ACCURACY_M", defaults.maximum_accuracy_m
+            ),
+            short_gap_seconds=number(
+                "HERMES_PLACE_SHORT_GAP_SECONDS", defaults.short_gap_seconds
+            ),
+            long_gap_seconds=number(
+                "HERMES_PLACE_LONG_GAP_SECONDS", defaults.long_gap_seconds
+            ),
+            promotion_visits=integer(
+                "HERMES_PLACE_PROMOTION_VISITS", defaults.promotion_visits
+            ),
+            promotion_dwell_seconds=number(
+                "HERMES_PLACE_PROMOTION_DWELL_SECONDS", defaults.promotion_dwell_seconds
+            ),
+            visit_retention=integer(
+                "HERMES_PLACE_VISIT_RETENTION", defaults.visit_retention
+            ),
+            deduplication_retention=integer(
+                "HERMES_PLACE_DEDUPLICATION_RETENTION", defaults.deduplication_retention
+            ),
+            centroid_precision=integer(
+                "HERMES_PLACE_CENTROID_PRECISION", defaults.centroid_precision
+            ),
+            state_dir=Path(state_dir),
         )
 
 
@@ -195,13 +236,16 @@ class CandidateAccumulator:
     stay: Stay
     latitude_sum: float
     longitude_sum: float
-    outside_since: datetime | None = None
-    outside_mode: MovementMode | None = None
+    good_quality_count: int = 0
+    limited_quality_count: int = 0
+    poor_quality_count: int = 0
+    departure_observed_at: datetime | None = None
+    departure_mode: MovementMode | None = None
 
 
 @dataclass(frozen=True)
 class PlaceEngineState:
-    schema_version: int = 1
+    schema_version: int = 2
     candidate: CandidateAccumulator | None = None
     active_stay: CandidateAccumulator | None = None
     places: tuple[Place, ...] = ()
@@ -228,20 +272,60 @@ def _id(prefix: str, *values: object) -> str:
     return f"{prefix}_{hashlib.sha256(encoded).hexdigest()[:24]}"
 
 
-def _quality(observation: LocationObservation) -> DataQuality:
+def _quality(observation: LocationObservation, maximum_accuracy_m: float = 100.0) -> DataQuality:
     if observation.accuracy_m is None:
         return DataQuality.LIMITED
     if observation.accuracy_m <= 30:
         return DataQuality.GOOD
-    if observation.accuracy_m <= 100:
+    if observation.accuracy_m <= maximum_accuracy_m:
         return DataQuality.LIMITED
     return DataQuality.POOR
 
 
-def _confidence(quality: DataQuality, count: int, duration: float) -> float:
+def _confidence(quality: DataQuality, count: int, duration: float,
+                poor_fraction: float = 0.0) -> float:
     base = {DataQuality.GOOD: .6, DataQuality.LIMITED: .4,
             DataQuality.POOR: .15, DataQuality.INVALID: 0}[quality]
-    return round(min(1.0, base + min(count, 5) * .05 + min(duration / 6000, .15)), 3)
+    confidence = base + min(count, 5) * .05 + min(duration / 6000, .15)
+    return round(max(0.0, min(1.0, confidence - poor_fraction * .35)), 3)
+
+
+def _quality_counts(quality: DataQuality) -> tuple[int, int, int]:
+    """Return bounded aggregate evidence; INVALID is deliberately not evidence."""
+    if quality is DataQuality.GOOD:
+        return 1, 0, 0
+    if quality is DataQuality.LIMITED:
+        return 0, 1, 0
+    if quality is DataQuality.POOR:
+        return 0, 0, 1
+    return 0, 0, 0
+
+
+def _add_quality_evidence(good: int, limited: int, poor: int,
+                          quality: DataQuality) -> tuple[int, int, int]:
+    """Add evidence while keeping counters bounded and their distribution stable."""
+    if good + limited + poor >= 1024:
+        good, limited, poor = good // 2, limited // 2, poor // 2
+    added_good, added_limited, added_poor = _quality_counts(quality)
+    return good + added_good, limited + added_limited, poor + added_poor
+
+
+def aggregate_quality(good: int, limited: int, poor: int) -> DataQuality:
+    """Classify the distribution without letting one outlier dominate.
+
+    GOOD requires at least 60% good evidence, POOR at least 50% poor evidence;
+    all other valid mixtures are LIMITED. Empty/invalid-only evidence is INVALID.
+    """
+    if min(good, limited, poor) < 0:
+        raise ValueError("quality counts cannot be negative")
+    total = good + limited + poor
+    if total == 0:
+        return DataQuality.INVALID
+    if poor * 2 >= total:
+        return DataQuality.POOR
+    if good * 5 >= total * 3:
+        return DataQuality.GOOD
+    return DataQuality.LIMITED
 
 
 class PlaceEngine:
@@ -253,11 +337,13 @@ class PlaceEngine:
         self.state = state or PlaceEngineState()
 
     def _event(self, kind: PlaceEventType, stay: Stay, confirmed_at: datetime,
-               evidence: tuple[str, ...], place_id: str | None = None) -> PlaceEvent:
+               evidence: tuple[str, ...], place_id: str | None = None,
+               observed_at: datetime | None = None) -> PlaceEvent:
         return PlaceEvent(
             _id("event", kind.value, stay.stay_id, confirmed_at.isoformat()), kind,
-            stay.started_at if kind in {PlaceEventType.STAY_CANDIDATE_STARTED,
-                                       PlaceEventType.STAY_CONFIRMED} else confirmed_at,
+            observed_at or (stay.started_at if kind in {
+                PlaceEventType.STAY_CANDIDATE_STARTED,
+                PlaceEventType.STAY_CONFIRMED} else confirmed_at),
             confirmed_at, place_id if place_id is not None else stay.place_id,
             stay.stay_id, stay.confidence, evidence, stay.data_quality,
         )
@@ -279,7 +365,9 @@ class PlaceEngine:
             observation.accuracy_m or self.config.stay_radius_m,
             _confidence(quality, 1, 0), quality, mode, None,
         )
-        return CandidateAccumulator(stay, observation.latitude, observation.longitude)
+        good, limited, poor = _quality_counts(quality)
+        return CandidateAccumulator(stay, observation.latitude, observation.longitude,
+                                    good, limited, poor)
 
     def _update(self, accumulator: CandidateAccumulator,
                 observation: LocationObservation, quality: DataQuality) -> CandidateAccumulator:
@@ -291,14 +379,47 @@ class PlaceEngine:
         radius = max(accumulator.stay.radius_m,
                      haversine_m(centroid[0], centroid[1], observation.latitude,
                                  observation.longitude))
-        combined_quality = quality if quality.value > accumulator.stay.data_quality.value \
-            else accumulator.stay.data_quality
+        good, limited, poor = _add_quality_evidence(
+            accumulator.good_quality_count, accumulator.limited_quality_count,
+            accumulator.poor_quality_count, quality
+        )
+        combined_quality = aggregate_quality(good, limited, poor)
+        valid_count = good + limited + poor
+        poor_fraction = poor / valid_count if valid_count else 0.0
         stay = replace(accumulator.stay, duration_seconds=duration,
                        observation_count=count, centroid=centroid, radius_m=round(radius, 2),
-                       confidence=_confidence(combined_quality, count, duration),
+                       confidence=_confidence(combined_quality, valid_count, duration,
+                                              poor_fraction),
                        data_quality=combined_quality)
         return CandidateAccumulator(stay, lat_sum, lon_sum,
-                                    accumulator.outside_since, accumulator.outside_mode)
+                                    good, limited, poor,
+                                    accumulator.departure_observed_at,
+                                    accumulator.departure_mode)
+
+    def _update_quality_only(self, accumulator: CandidateAccumulator,
+                             observation: LocationObservation,
+                             quality: DataQuality) -> CandidateAccumulator:
+        """Record poor evidence without letting an unreliable point move the cluster."""
+        good, limited, poor = _add_quality_evidence(
+            accumulator.good_quality_count, accumulator.limited_quality_count,
+            accumulator.poor_quality_count, quality
+        )
+        valid_count = good + limited + poor
+        aggregate = aggregate_quality(good, limited, poor)
+        duration = max(
+            0.0, (observation.observed_at - accumulator.stay.started_at).total_seconds()
+        )
+        stay = replace(
+            accumulator.stay,
+            duration_seconds=duration,
+            observation_count=accumulator.stay.observation_count + 1,
+            confidence=_confidence(
+                aggregate, valid_count, duration, poor / valid_count if valid_count else 0.0
+            ),
+            data_quality=aggregate,
+        )
+        return replace(accumulator, stay=stay, good_quality_count=good,
+                       limited_quality_count=limited, poor_quality_count=poor)
 
     def match(self, stay: Stay) -> PlaceMatch:
         if stay.data_quality in {DataQuality.POOR, DataQuality.INVALID}:
@@ -348,6 +469,7 @@ class PlaceEngine:
         return replace(accumulator, stay=replace(stay, place_id=place_id)), match
 
     def _complete(self, accumulator: CandidateAccumulator, departed_at: datetime,
+                  departure_confirmed_at: datetime,
                   departure_mode: MovementMode | None,
                   events: list[PlaceEvent]) -> tuple[PlaceMatch | None, Stay]:
         stay = replace(accumulator.stay, ended_at=departed_at, status=StayStatus.COMPLETED,
@@ -355,10 +477,14 @@ class PlaceEngine:
                        duration_seconds=max(0, (departed_at - accumulator.stay.started_at).total_seconds()))
         match: PlaceMatch | None = None
         if stay.place_id is None:
-            accumulator, match = self._associate(replace(accumulator, stay=stay), departed_at, events)
+            accumulator, match = self._associate(
+                replace(accumulator, stay=stay), departure_confirmed_at, events
+            )
             stay = accumulator.stay
-        events.append(self._event(PlaceEventType.STAY_COMPLETED, stay, departed_at,
-                                  ("departure_hysteresis_elapsed",)))
+        events.append(self._event(
+            PlaceEventType.STAY_COMPLETED, stay, departure_confirmed_at,
+            ("departure_hysteresis_elapsed",), observed_at=departed_at
+        ))
         if stay.place_id:
             visit = PlaceVisit(_id("visit", stay.place_id, stay.stay_id), stay.place_id,
                                stay.stay_id, stay.started_at, departed_at,
@@ -381,7 +507,8 @@ class PlaceEngine:
                         and total >= self.config.promotion_dwell_seconds
                         and stay.data_quality is not DataQuality.POOR):
                     status = PlaceStatus.CONFIRMED
-                    events.append(self._event(PlaceEventType.PLACE_CONFIRMED, stay, departed_at,
+                    events.append(self._event(PlaceEventType.PLACE_CONFIRMED, stay,
+                                              departure_confirmed_at,
                                               ("visit_threshold", "dwell_threshold")))
                 places.append(replace(place, centroid=centroid,
                                       radius_m=max(place.radius_m, stay.radius_m),
@@ -391,13 +518,15 @@ class PlaceEngine:
                                       typical_dwell_seconds=float(median(durations)), status=status))
             self.state = replace(self.state, places=tuple(places),
                                  visits=(self.state.visits + (visit,))[-self.config.visit_retention:])
-            events.append(self._event(PlaceEventType.PLACE_DEPARTED, stay, departed_at,
-                                      ("visit_recorded",)))
+            events.append(self._event(
+                PlaceEventType.PLACE_DEPARTED, stay, departure_confirmed_at,
+                ("visit_recorded",), observed_at=departed_at
+            ))
         return match, stay
 
     def process(self, observation: LocationObservation,
                 movement_state: MovementState | None = None) -> PlaceResult:
-        quality = _quality(observation)
+        quality = _quality(observation, self.config.maximum_accuracy_m)
         if observation.observation_id in self.state.seen_ids:
             return PlaceResult(self.state,
                                self.state.active_stay.stay if self.state.active_stay else None,
@@ -419,7 +548,10 @@ class PlaceEngine:
         diagnostic = ["coordinates_redacted", f"quality:{quality.value}"]
         if gap > self.config.long_gap_seconds:
             # A long absence is uncertainty, never evidence of departure.
-            self.state = replace(self.state, candidate=None)
+            active = self.state.active_stay
+            if active:
+                active = replace(active, departure_observed_at=None, departure_mode=None)
+            self.state = replace(self.state, candidate=None, active_stay=active)
             return PlaceResult(self.state,
                                self.state.active_stay.stay if self.state.active_stay else None,
                                (), None, PlaceProcessingStatus.GAP_DETECTED, quality,
@@ -427,29 +559,49 @@ class PlaceEngine:
         acceptable = quality is not DataQuality.POOR and (speed is None or speed <= 2.6) \
             and mode not in {MovementMode.CYCLING, MovementMode.AUTOMOTIVE}
         active = self.state.active_stay
+        if active and gap > self.config.short_gap_seconds:
+            # A gap breaks continuous departure evidence. The current outside
+            # point may start a new pending window, but cannot confirm the old one.
+            active = replace(active, departure_observed_at=None, departure_mode=None)
+            self.state = replace(self.state, active_stay=active)
+            diagnostic.append("medium_gap_departure_evidence_reset")
         if active:
             distance = haversine_m(active.stay.centroid[0], active.stay.centroid[1],
                                    observation.latitude, observation.longitude)
-            if quality is DataQuality.POOR or distance <= self.config.departure_radius_m:
-                active = self._update(replace(active, outside_since=None, outside_mode=None),
+            if quality is DataQuality.POOR:
+                active = self._update_quality_only(active, observation, quality)
+                self.state = replace(self.state, active_stay=active)
+                status = PlaceProcessingStatus.STAY_ACTIVE
+                diagnostic.append("poor_observation_excluded_from_spatial_cluster")
+            elif distance <= self.config.departure_radius_m:
+                active = self._update(replace(active, departure_observed_at=None,
+                                              departure_mode=None),
                                       observation, quality)
                 self.state = replace(self.state, active_stay=active)
                 status = PlaceProcessingStatus.STAY_ACTIVE
-            elif active.outside_since is None:
-                active = replace(active, outside_since=observation.observed_at, outside_mode=mode)
+            elif active.departure_observed_at is None:
+                active = replace(active, departure_observed_at=observation.observed_at,
+                                 departure_mode=mode)
                 self.state = replace(self.state, active_stay=active)
                 status = PlaceProcessingStatus.STAY_ACTIVE
                 diagnostic.append("departure_pending")
-            elif (observation.observed_at - active.outside_since).total_seconds() \
+            elif (observation.observed_at - active.departure_observed_at).total_seconds() \
                     >= self.config.departure_confirmation_seconds:
-                match, _ = self._complete(active, active.outside_since,
-                                          active.outside_mode or mode, events)
+                match, _ = self._complete(active, active.departure_observed_at,
+                                          observation.observed_at,
+                                          active.departure_mode or mode, events)
                 self.state = replace(self.state, active_stay=None)
                 status = PlaceProcessingStatus.DEPARTURE_CONFIRMED
             else:
                 status = PlaceProcessingStatus.STAY_ACTIVE
         elif not acceptable:
-            if self.state.candidate:
+            if self.state.candidate and quality is DataQuality.POOR:
+                candidate = self._update_quality_only(
+                    self.state.candidate, observation, quality
+                )
+                self.state = replace(self.state, candidate=candidate)
+                diagnostic.append("poor_observation_excluded_from_spatial_cluster")
+            elif self.state.candidate:
                 discarded = replace(self.state.candidate.stay, status=StayStatus.DISCARDED)
                 events.append(self._event(PlaceEventType.STAY_DISCARDED, discarded,
                                           observation.observed_at, ("movement_or_quality",)))

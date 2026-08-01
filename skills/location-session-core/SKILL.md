@@ -50,6 +50,13 @@ cycling/automotive cannot start a Stay; long gaps mean uncertainty. Matching
 returns typed ambiguity. Promotion needs Visits, dwell and quality. Arrival
 contains backdated `observed_at` and later `confirmed_at`.
 
+Quality aggregation uses persisted GOOD/LIMITED/POOR counters: >=60% GOOD is
+GOOD, >=50% POOR is POOR, otherwise LIMITED; INVALID is excluded. Poor fraction
+reduces confidence. Departure remains pending at `departure_observed_at` until
+the hysteresis is met at `departure_confirmed_at`; only then do Visit
+`departed_at` and duration use the backdated first outside time. A return or gap
+resets pending departure evidence.
+
 Separate Place state quantizes centroids and bounds Visits/deduplication;
 diagnostics/events are coordinate-free. Use `placectl forget` or Place-only
 `reset`. Replay requires `synthetic: true`. Keep it in shadow mode without

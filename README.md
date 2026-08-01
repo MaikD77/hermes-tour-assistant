@@ -323,6 +323,12 @@ außerhalb des 80-m-Radius bestätigt. 50-m-Ankunftsradius, Qualitätsfilter und
 Hysterese tolerieren kurze Ausgänge und GPS-Sprünge. Lange Lücken bedeuten
 Unsicherheit, nie automatisch Abfahrt.
 
+Bei Departure ist der erste belastbare Außenpunkt nur
+`departure_observed_at`. Erst nach erfüllter Hysterese entsteht
+`departure_confirmed_at`; `departed_at` und die Visit-Dauer werden dann
+fachlich auf den ersten Außenpunkt zurückdatiert. Stay-Qualität wird aus
+begrenzten GOOD-/LIMITED-/POOR-Zählern aggregiert, nicht aus Enum-Strings.
+
 Places werden erst nach wiederholten Visits, Mindestdauer und Qualität
 bestätigt. Die aus dem ersten Stay abgeleitete ID bleibt bei Centroid-Verschiebung
 stabil. Persistierte Centroids werden auf vier Nachkommastellen minimiert; CLI,

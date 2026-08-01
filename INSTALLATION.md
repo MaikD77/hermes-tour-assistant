@@ -251,6 +251,10 @@ Movement-State-Schema 2 ergänzt einen konstant großen Segmentakkumulator. Sche
 `HERMES_PLACE_STATE_DIR` ist standardmäßig `~/.local/state/hermes/places`.
 Ordner/Dateien werden `0700`/`0600`; Symlinks werden abgewiesen. Der State hält
 quantisierte Cluster, höchstens 200 trackfreie Visits und 256 Deduplizierungs-IDs.
+Alle betrieblichen Schwellen sind mit den in `.env.example` aufgeführten
+`HERMES_PLACE_*`-Variablen konfigurierbar. Zählwerte und Centroid-Präzision
+werden strikt als Integer gelesen; ungültige oder widersprüchliche Radius-,
+Zeit-, Retention- und Gap-Beziehungen verhindern den Start.
 
 ```bash
 python3 skills/location-session-core/scripts/placectl.py status

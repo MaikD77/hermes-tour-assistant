@@ -16,8 +16,14 @@ one continuous presence, **Place** a stable recognizable spatial cluster, and
 address, building or meaning. No label is inferred.
 
 Arrival is the first sample of a subsequently confirmed Stay. Events carry its
-backdated `observed_at` and later `confirmed_at`. Departure is the first outside
-sample only after the outside condition survives the confirmation window.
+backdated `observed_at` and later `confirmed_at`. For departure,
+`departure_observed_at` is the first reliable sample beyond the departure
+radius and is initially only pending evidence. `departure_confirmed_at` is the
+later sample at which the hysteresis duration is satisfied. Only then is the
+departure emitted: its factual `departed_at` and event `observed_at` are
+backdated to `departure_observed_at`, while event `confirmed_at` is
+`departure_confirmed_at`. Stay and Visit duration end at factual `departed_at`,
+not confirmation time. A return or data gap breaks the pending evidence window.
 
 ## Detection, hysteresis and gaps
 
@@ -27,6 +33,13 @@ cycling/automotive rejects creation. Departure needs 120 seconds beyond 80 m.
 Poor accuracy cannot force departure and returning inside clears pending
 departure. A gap beyond 30 minutes marks uncertainty, never departure; active
 Stay survives restart/gap.
+
+Stay data quality is a persisted bounded distribution of GOOD, LIMITED and POOR
+observation counts; INVALID is never regular evidence. At least 60% GOOD yields
+GOOD, at least 50% POOR yields POOR, and other valid mixtures yield LIMITED.
+Thus one poor outlier does not dominate good evidence, while predominantly poor
+input remains poor. Confidence receives an explicit penalty proportional to the
+poor fraction, and POOR stays cannot promote a Place.
 
 ## Matching, promotion and identity
 
@@ -63,8 +76,10 @@ MovementSegment reuse was rejected because motion and presence have different
 lifecycle/hysteresis. Durable spatial state creates deletion duties, and close
 Places may deliberately remain ambiguous.
 
-There is no legacy Place state: an absent/schema-0 empty file migrates to schema
-1; invalid files quarantine. Movement/Tour/City state remains untouched.
+Schema 1 Place state migrates deterministically to schema 2 by seeding quality
+counts from the prior aggregate and retaining pending departure evidence under
+its explicit name. An absent/schema-0 empty file initializes schema 2; invalid
+files quarantine. Movement/Tour/City state remains untouched.
 Rollout: unit tests, synthetic replay, anonymized offline replay, production
 shadow mode, several days' comparison, threshold calibration, then later
 Context Engine consumption. No notifications are enabled.

@@ -15,6 +15,7 @@ from location_core.place import (
     PlaceEventType,
     PlaceStatus,
     StayStatus,
+    aggregate_quality,
 )
 from location_core.place_state import PlaceStateRepository
 from location_core.repository import CorruptStateError
@@ -31,9 +32,13 @@ def observation(index: int, seconds: int, *, lat: float = 50, lon: float = 10,
 
 
 def config(**values: object) -> PlaceConfig:
-    return PlaceConfig(candidate_seconds=120, confirmed_seconds=300,
-                       departure_confirmation_seconds=120, promotion_visits=2,
-                       promotion_dwell_seconds=600, **values)
+    configured: dict[str, object] = {
+        "candidate_seconds": 120, "confirmed_seconds": 300,
+        "departure_confirmation_seconds": 120, "promotion_visits": 2,
+        "promotion_dwell_seconds": 600,
+    }
+    configured.update(values)
+    return PlaceConfig(**configured)
 
 
 def confirm(engine: PlaceEngine, *, offset: int = 0, lat: float = 50,
@@ -98,6 +103,12 @@ def test_confirmed_departure_creates_visit_without_track() -> None:
     assert result.active_stay is None
     assert len(result.state.visits) == 1
     visit = result.state.visits[0]
+    completed = next(e for e in result.events
+                     if e.event_type is PlaceEventType.STAY_COMPLETED)
+    assert completed.observed_at == BASE + timedelta(seconds=600)
+    assert completed.confirmed_at == BASE + timedelta(seconds=720)
+    assert visit.departed_at == completed.observed_at
+    assert visit.duration_seconds == 600
     assert not hasattr(visit, "observations")
     assert {e.event_type for e in result.events} >= {
         PlaceEventType.STAY_COMPLETED, PlaceEventType.PLACE_DEPARTED}
@@ -182,3 +193,121 @@ def test_repository_rejects_symlink(tmp_path) -> None:
     link.symlink_to(target, target_is_directory=True)
     with pytest.raises(OSError):
         PlaceStateRepository(link).reset()
+
+
+@pytest.mark.parametrize(("good", "limited", "poor", "expected"), [
+    (4, 0, 0, DataQuality.GOOD),
+    (0, 4, 0, DataQuality.LIMITED),
+    (3, 0, 1, DataQuality.GOOD),
+    (1, 0, 3, DataQuality.POOR),
+    (1, 1, 0, DataQuality.LIMITED),
+    (2, 1, 0, DataQuality.GOOD),
+    (0, 0, 0, DataQuality.INVALID),
+])
+def test_explicit_quality_aggregation(good: int, limited: int, poor: int,
+                                      expected: DataQuality) -> None:
+    assert aggregate_quality(good, limited, poor) is expected
+
+
+def test_single_poor_outlier_reduces_confidence_without_dominating_stay() -> None:
+    engine = PlaceEngine(config())
+    confirm(engine)
+    before = engine.state.active_stay.stay.confidence
+    result = engine.process(observation(3, 360, lat=55, lon=15, accuracy=500))
+    assert result.active_stay.data_quality is DataQuality.GOOD
+    assert result.active_stay.confidence < before
+    assert result.active_stay.centroid == engine.state.places[0].centroid
+
+
+def test_quality_aggregation_survives_persistence_reload(tmp_path) -> None:
+    engine = PlaceEngine(config())
+    confirm(engine)
+    engine.process(observation(3, 360, accuracy=500))
+    repository = PlaceStateRepository(tmp_path)
+    repository.save(engine.state)
+    loaded = repository.load()
+    assert loaded.active_stay is not None
+    assert loaded.active_stay.good_quality_count == 3
+    assert loaded.active_stay.poor_quality_count == 1
+    resumed = PlaceEngine(config(), loaded)
+    result = resumed.process(observation(4, 420, accuracy=50))
+    assert result.active_stay.data_quality is DataQuality.GOOD
+
+
+def test_poor_quality_stay_cannot_promote_place() -> None:
+    engine = PlaceEngine(config(promotion_visits=1, promotion_dwell_seconds=1))
+    confirm(engine)
+    for index, seconds in enumerate((360, 420, 480, 540), start=3):
+        engine.process(observation(index, seconds, accuracy=500))
+    depart(engine, offset=600, index=7)
+    assert engine.state.places[0].status is PlaceStatus.CANDIDATE
+
+
+def test_pending_departure_survives_reload_and_backdates_departure(tmp_path) -> None:
+    engine = PlaceEngine(config())
+    confirm(engine)
+    first_outside = engine.process(observation(3, 600, lat=50.002, lon=10.002))
+    assert first_outside.active_stay is not None
+    assert not first_outside.events
+    repository = PlaceStateRepository(tmp_path)
+    repository.save(engine.state)
+    resumed = PlaceEngine(config(), repository.load())
+    result = resumed.process(observation(4, 720, lat=50.003, lon=10.003))
+    event = next(e for e in result.events if e.event_type is PlaceEventType.STAY_COMPLETED)
+    assert event.observed_at == BASE + timedelta(seconds=600)
+    assert event.confirmed_at == BASE + timedelta(seconds=720)
+
+
+def test_return_during_pending_departure_cancels_it() -> None:
+    engine = PlaceEngine(config())
+    confirm(engine)
+    engine.process(observation(3, 600, lat=50.002, lon=10.002))
+    result = engine.process(observation(4, 650, lat=50, lon=10))
+    assert result.active_stay is not None
+    assert result.state.active_stay.departure_observed_at is None
+    assert not result.events
+
+
+def test_gap_during_pending_departure_restarts_evidence_window() -> None:
+    engine = PlaceEngine(config())
+    confirm(engine)
+    engine.process(observation(3, 600, lat=50.002, lon=10.002))
+    after_gap = engine.process(observation(4, 1000, lat=50.003, lon=10.003))
+    assert after_gap.active_stay is not None
+    assert after_gap.state.active_stay.departure_observed_at == BASE + timedelta(seconds=1000)
+    result = engine.process(observation(5, 1120, lat=50.004, lon=10.004))
+    event = next(e for e in result.events if e.event_type is PlaceEventType.STAY_COMPLETED)
+    assert event.observed_at == BASE + timedelta(seconds=1000)
+    assert event.confirmed_at == BASE + timedelta(seconds=1120)
+
+
+def test_from_env_loads_all_operational_configuration(tmp_path) -> None:
+    env = {
+        "HERMES_PLACE_STAY_RADIUS_M": "40", "HERMES_PLACE_CANDIDATE_SECONDS": "60",
+        "HERMES_PLACE_CONFIRMED_SECONDS": "180", "HERMES_PLACE_MINIMUM_OBSERVATIONS": "4",
+        "HERMES_PLACE_DEPARTURE_RADIUS_M": "70", "HERMES_PLACE_DEPARTURE_SECONDS": "90",
+        "HERMES_PLACE_MATCH_RADIUS_M": "65", "HERMES_PLACE_MAXIMUM_ACCURACY_M": "80",
+        "HERMES_PLACE_SHORT_GAP_SECONDS": "200", "HERMES_PLACE_LONG_GAP_SECONDS": "800",
+        "HERMES_PLACE_PROMOTION_VISITS": "2", "HERMES_PLACE_PROMOTION_DWELL_SECONDS": "900",
+        "HERMES_PLACE_VISIT_RETENTION": "50", "HERMES_PLACE_DEDUPLICATION_RETENTION": "64",
+        "HERMES_PLACE_CENTROID_PRECISION": "5", "HERMES_PLACE_STATE_DIR": str(tmp_path),
+    }
+    loaded = PlaceConfig.from_env(env)
+    assert loaded.minimum_observations == 4 and loaded.maximum_accuracy_m == 80
+    assert loaded.short_gap_seconds == 200 and loaded.long_gap_seconds == 800
+    assert loaded.promotion_visits == 2 and loaded.promotion_dwell_seconds == 900
+    assert loaded.visit_retention == 50 and loaded.deduplication_retention == 64
+    assert loaded.centroid_precision == 5 and loaded.state_dir == tmp_path
+
+
+@pytest.mark.parametrize(("name", "value"), [
+    ("HERMES_PLACE_MINIMUM_OBSERVATIONS", "2.5"),
+    ("HERMES_PLACE_CENTROID_PRECISION", "2"),
+    ("HERMES_PLACE_LONG_GAP_SECONDS", "100"),
+])
+def test_from_env_strictly_validates_types_and_relationships(name: str, value: str) -> None:
+    env = {name: value}
+    if name == "HERMES_PLACE_LONG_GAP_SECONDS":
+        env["HERMES_PLACE_SHORT_GAP_SECONDS"] = "200"
+    with pytest.raises(ValueError):
+        PlaceConfig.from_env(env)
