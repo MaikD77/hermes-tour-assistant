@@ -8,6 +8,13 @@ ProviderError ohne Exceptions als erwartbaren Kontrollfluss. Google kennt nur de
 Replay arbeitet offline mit synthetischen kanonischen Events. Paginierung wird vollständig
 verfolgt und `singleEvents=true` lässt Google Serieninstanzen expandieren.
 
+Die produktive Factory baut für `google` einen Google-Calendar-v3-Transport mit einem
+Service-Account aus `HERMES_GOOGLE_CREDENTIALS_FILE`. Nur eine existierende reguläre,
+nicht-symlinked Datei mit privaten Rechten wird akzeptiert. Die optionale Dependency-Gruppe
+`calendar` stellt `google-auth` und `google-api-python-client` bereit. Der Transport exponiert
+ausschließlich `events.list`, verwendet exakt `calendar.readonly`, `singleEvents=true` und
+`orderBy=startTime`; eine interaktive OAuth-UI oder Schreibmethoden existieren nicht.
+
 `CalendarEvent` ist immutable, timezone-aware, providerneutral und deterministisch identifiziert.
 Es enthält Status (confirmed/tentative/cancelled), Sichtbarkeit (private/public/default),
 Transparenz (busy/free), aggregierte Teilnehmerzahl und normalisierte Nutzerantwort. Cancelled
@@ -30,6 +37,11 @@ konfigurierten Lookback begrenzt. Der Score berücksichtigt Provider-/Paginierun
 Freshness, tentative/response/private und Konflikte, nicht die Eventanzahl. All-day, Dauer,
 Ort/remote, busy/free und Nähe werden deterministisch über Auswahl, Reihenfolge, Evidenz und
 Traits repräsentiert; Titel werden niemals als Absicht interpretiert.
+
+Vor jeder Arithmetik werden Context-, Fenster-, Abruf- und Eventzeitpunkte strukturell geprüft.
+Ein naiver Abruf ist invalid; ein Abruf weiter als die konfigurierbare Future-Skew-Toleranz in
+der Zukunft erzeugt `calendar_clock_skew`. Gemischte Eventzeiten liefern Partial, ausschließlich
+ungültige Eventzeiten Invalid. Zukünftige Abrufe innerhalb der Toleranz gelten höchstens fresh.
 
 ## Konflikte, Freshness und Integration
 

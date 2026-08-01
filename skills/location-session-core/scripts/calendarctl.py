@@ -12,12 +12,12 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from location_core.calendar_context import CalendarContextConfig, CalendarContextEngine
-from location_core.calendar_contracts import CalendarUnavailable
-from location_core.calendar_providers import (
-    GOOGLE_READ_ONLY_SCOPE,
-    CalendarProviderConfig,
-    ReplayCalendarProvider,
+from location_core.calendar_factory import (
+    build_calendar_provider,
+    context_config_from_env,
+    provider_config_from_env,
 )
+from location_core.calendar_providers import CalendarProviderConfig
 from location_core.calendar_state import CalendarStateRepository
 
 
@@ -28,35 +28,9 @@ def _integer(env: Mapping[str, str], name: str, default: int) -> int:
         raise ValueError(f"{name} must be an integer") from error
 
 
-def _boolean(env: Mapping[str, str], name: str, default: bool) -> bool:
-    value = env.get(name, str(default)).strip().lower()
-    if value not in ("true", "false"):
-        raise ValueError(f"{name} must be true or false")
-    return value == "true"
-
-
 def settings(env: Mapping[str, str] = os.environ) -> tuple[CalendarProviderConfig, CalendarContextConfig, Path]:
-    ids = tuple(value.strip() for value in env.get("HERMES_CALENDAR_IDS", "").split(",") if value.strip())
-    provider = CalendarProviderConfig(ids,
-        tuple(filter(None, env.get("HERMES_CALENDAR_INCLUDE", "").split(","))),
-        tuple(filter(None, env.get("HERMES_CALENDAR_EXCLUDE", "").split(","))),
-        _integer(env, "HERMES_CALENDAR_MAX_EVENTS", 250),
-        _integer(env, "HERMES_CALENDAR_TITLE_MAX_LENGTH", 120),
-        _integer(env, "HERMES_CALENDAR_DESCRIPTION_MAX_LENGTH", 0),
-        _integer(env, "HERMES_CALENDAR_LOCATION_MAX_LENGTH", 120),
-        _boolean(env, "HERMES_CALENDAR_PRIVATE_SANITIZATION", True))
-    if env.get("HERMES_CALENDAR_PROVIDER") == "google" and \
-            env.get("HERMES_GOOGLE_OAUTH_SCOPE", GOOGLE_READ_ONLY_SCOPE) != GOOGLE_READ_ONLY_SCOPE:
-        raise ValueError("Google Calendar scope must be calendar.readonly")
-    context = CalendarContextConfig(
-        _integer(env, "HERMES_CALENDAR_FRESH_SECONDS", 300),
-        _integer(env, "HERMES_CALENDAR_AGING_SECONDS", 900),
-        _integer(env, "HERMES_CALENDAR_STALE_SECONDS", 3600),
-        _integer(env, "HERMES_CALENDAR_LOOKBACK_MINUTES", 120),
-        _integer(env, "HERMES_CALENDAR_STARTING_SOON_MINUTES", 15),
-        _integer(env, "HERMES_CALENDAR_ENDING_SOON_MINUTES", 10),
-        _integer(env, "HERMES_CALENDAR_CONFLICT_BUFFER_MINUTES", 0),
-        _integer(env, "HERMES_CALENDAR_UPCOMING_LIMIT", 10))
+    provider = provider_config_from_env(env)
+    context = context_config_from_env(env)
     state = Path(env.get("HERMES_CALENDAR_STATE_DIR", str(Path.home() / ".local/state/hermes/calendar")))
     return provider, context, state
 
@@ -76,7 +50,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("command", choices=("status", "fetch", "current", "upcoming",
         "conflicts", "explain", "export", "diagnose", "reset"))
     args = parser.parse_args(argv)
-    provider_cfg, context_cfg, state_dir = settings()
+    try:
+        provider_cfg, context_cfg, state_dir = settings()
+    except ValueError:
+        print(json.dumps({"status": "invalid", "reason": "calendar configuration is invalid"}))
+        return 2
     repository = CalendarStateRepository(state_dir)
     if args.command == "reset":
         repository.reset()
@@ -98,10 +76,8 @@ def main(argv: list[str] | None = None) -> int:
         start = now - timedelta(minutes=context_cfg.recent_minutes)
         end = now + timedelta(hours=lookahead)
         # Replay is intentionally empty unless a caller injects synthetic fixtures in Python.
-        result = (ReplayCalendarProvider((), fetched_at=now).list_events(
-            window_start=start, window_end=end)
-            if os.environ.get("HERMES_CALENDAR_PROVIDER", "replay") == "replay" else
-            CalendarUnavailable(now, "Google transport is not initialized by offline CLI"))
+        result = build_calendar_provider(env=os.environ, config=provider_cfg,
+            clock=lambda: now).list_events(window_start=start, window_end=end)
         context = CalendarContextEngine(context_cfg).compute(provider_result=result,
             computed_at=now, window_start=start, window_end=end)
         repository.save(context)

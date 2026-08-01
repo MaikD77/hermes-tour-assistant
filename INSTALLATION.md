@@ -33,6 +33,11 @@ Für Google wird eine außerhalb des Repositorys liegende Credential-Datei über
 `HERMES_GOOGLE_CREDENTIALS_FILE` referenziert. Sie muss dem Dienstbenutzer gehören und Modus
 `0600` besitzen. Tokens oder Credential-Inhalte gehören weder in `.env`, Logs noch Fixtures.
 Als Scope ist ausschließlich `https://www.googleapis.com/auth/calendar.readonly` zulässig.
+Hermes unterstützt dafür genau Service-Account-Credentials; eine OAuth-Login-UI wird nicht
+bereitgestellt. Installiere die optionale Gruppe mit `pip install '.[calendar]'`. Die zentrale
+Provider-Factory lehnt fehlende Dateien, Symlinks, nicht-reguläre Dateien, Gruppen-/Weltrechte
+und jeden abweichenden Scope typisiert ab. Der Service Account muss für jede explizit
+konfigurierte Calendar ID read-only freigegeben sein; Kalender werden niemals aufgelistet.
 
 Nach Konfiguration dienen `python skills/location-session-core/scripts/calendarctl.py diagnose`
 und `fetch` zur Scope-/Shadow-Mode-Prüfung. Danach `status`, `current`, `upcoming`, `conflicts`

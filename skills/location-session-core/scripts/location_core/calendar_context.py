@@ -10,6 +10,7 @@ from .calendar_contracts import (
     AttendanceMode,
     CalendarAvailable,
     CalendarEvent,
+    CalendarInvalid,
     CalendarPartial,
     CalendarProviderResult,
     CalendarUnauthorized,
@@ -46,12 +47,13 @@ class CalendarContextConfig:
     ending_soon_minutes: int = 10
     conflict_buffer_minutes: int = 0
     upcoming_limit: int = 10
+    future_skew_seconds: int = 60
 
     def __post_init__(self) -> None:
         if not 0 < self.fresh_seconds <= self.aging_seconds <= self.stale_seconds:
             raise ValueError("calendar freshness thresholds must be positive and ordered")
         if min(self.recent_minutes, self.starting_soon_minutes, self.ending_soon_minutes,
-               self.conflict_buffer_minutes) < 0 or self.upcoming_limit < 1:
+               self.conflict_buffer_minutes, self.future_skew_seconds) < 0 or self.upcoming_limit < 1:
             raise ValueError("calendar context limits cannot be negative")
 
 
@@ -119,6 +121,15 @@ def _active(event: CalendarEvent) -> bool:
             (event.user_response is not UserResponse.DECLINED or event.organizer))
 
 
+def _aware(value: object) -> bool:
+    return isinstance(value, datetime) and value.tzinfo is not None and value.utcoffset() is not None
+
+
+def _valid_event(value: object) -> bool:
+    return (isinstance(value, CalendarEvent) and _aware(value.start_at) and _aware(value.end_at)
+            and value.end_at > value.start_at)
+
+
 class CalendarContextEngine:
     def __init__(self, config: CalendarContextConfig | None = None) -> None:
         self.config = config or CalendarContextConfig()
@@ -134,17 +145,39 @@ class CalendarContextEngine:
 
     def compute(self, *, provider_result: CalendarProviderResult, computed_at: datetime,
                 window_start: datetime, window_end: datetime) -> CalendarContext:
-        if any(value.tzinfo is None or value.utcoffset() is None
-               for value in (computed_at, window_start, window_end)) or window_end <= window_start:
+        if not all(_aware(value) for value in (computed_at, window_start, window_end)):
+            return self._empty(computed_at, window_start, window_end,
+                CalendarContextStatus.INVALID, "event_time_invalid", "calendar window is invalid")
+        if window_end <= window_start:
             return self._empty(computed_at, window_start, window_end,
                 CalendarContextStatus.INVALID, "event_time_invalid", "calendar window is invalid")
         fetched = provider_result.fetched_at
-        freshness = self._freshness(max(0., (computed_at - fetched).total_seconds()))
-        if not isinstance(provider_result, CalendarAvailable):
-            code = "unauthorized" if isinstance(provider_result, CalendarUnauthorized) else "provider_unavailable"
+        if not _aware(fetched):
             return self._empty(computed_at, window_start, window_end,
-                CalendarContextStatus.UNKNOWN, code, provider_result.reason, freshness)
-        events = tuple(sorted((event for event in provider_result.events if _active(event)), key=_sort))
+                CalendarContextStatus.INVALID, "event_time_invalid",
+                "calendar fetch timestamp is invalid")
+        future_seconds = (fetched - computed_at).total_seconds()
+        if future_seconds > self.config.future_skew_seconds:
+            return self._empty(computed_at, window_start, window_end,
+                CalendarContextStatus.INVALID, "calendar_clock_skew",
+                "calendar fetch timestamp exceeds future tolerance")
+        freshness = self._freshness(max(0., -future_seconds))
+        if not isinstance(provider_result, CalendarAvailable):
+            code = ("unauthorized" if isinstance(provider_result, CalendarUnauthorized) else
+                    "provider_invalid" if isinstance(provider_result, CalendarInvalid) else
+                    "provider_unavailable")
+            status = (CalendarContextStatus.INVALID if isinstance(provider_result, CalendarInvalid)
+                      else CalendarContextStatus.UNKNOWN)
+            return self._empty(computed_at, window_start, window_end,
+                status, code, provider_result.reason, freshness)
+        invalid_event_ids = tuple(getattr(event, "event_id", "invalid")
+            for event in provider_result.events if not _valid_event(event))
+        valid_events = tuple(event for event in provider_result.events if _valid_event(event))
+        if invalid_event_ids and not valid_events:
+            return self._empty(computed_at, window_start, window_end,
+                CalendarContextStatus.INVALID, "event_time_invalid",
+                "calendar contains no valid event timestamps", freshness)
+        events = tuple(sorted((event for event in valid_events if _active(event)), key=_sort))
         current = tuple(event for event in events if event.start_at <= computed_at < event.end_at)
         upcoming = tuple(event for event in events if event.start_at > computed_at)[:self.config.upcoming_limit]
         recent_floor = computed_at - timedelta(minutes=self.config.recent_minutes)
@@ -154,6 +187,10 @@ class CalendarContextEngine:
         if isinstance(provider_result, CalendarPartial):
             uncertainties.append(CalendarUncertainty("partial_result", "warning",
                 "calendar result is incomplete", computed_at, True))
+        if invalid_event_ids:
+            uncertainties.append(CalendarUncertainty("event_time_invalid", "warning",
+                "one or more calendar events have invalid timestamps", computed_at, True,
+                invalid_event_ids))
         if freshness in (CalendarFreshness.STALE, CalendarFreshness.EXPIRED):
             uncertainties.append(CalendarUncertainty("calendar_stale", "warning",
                 "calendar fetch is stale", computed_at, True))
@@ -171,7 +208,8 @@ class CalendarContextEngine:
         confidence = self._confidence(provider_result, events, freshness, conflicts)
         status = (CalendarContextStatus.STALE if freshness in
             (CalendarFreshness.STALE, CalendarFreshness.EXPIRED) else
-            CalendarContextStatus.PARTIAL if isinstance(provider_result, CalendarPartial) else
+            CalendarContextStatus.PARTIAL if isinstance(provider_result, CalendarPartial) or
+            invalid_event_ids else
             CalendarContextStatus.AVAILABLE)
         busy_until = max((e.end_at for e in current if e.transparency is Transparency.BUSY), default=None)
         traits = self._traits(current, upcoming, conflicts, computed_at)

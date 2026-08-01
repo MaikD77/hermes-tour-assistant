@@ -14,6 +14,10 @@ Beschreibungen sind standardmäßig leer. Private Titel werden zu `Private event
 
 OAuth-Credentials bleiben außerhalb des Repositorys und werden nur per Pfad referenziert. Der
 Google-Adapter akzeptiert allein den Calendar-readonly-Scope und stellt keine Mutation bereit.
+Produktiv wird ausschließlich ein Service Account aus einer regulären, nicht verlinkten Datei
+mit Modus `0600` verwendet. Die Factory liest oder protokolliert den Credential-Inhalt nicht;
+fehlende Abhängigkeiten, unsichere Rechte und Auth-/Netz-/Rate-Limit-Zustände werden lediglich
+als feste typisierte Kategorien ausgegeben.
 Der Kalendersnapshot enthält nur normalisierte Events und Context-Evidenz, wird atomar mit
 privaten Rechten gespeichert und ersetzt stets den vorherigen Snapshot; es gibt keine Historie
 oder Rohdaten-Cache. Exporte und Explain-Ausgaben stammen aus demselben sanitisierten Snapshot.

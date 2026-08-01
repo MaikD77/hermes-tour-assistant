@@ -123,7 +123,8 @@ def normalize_google_event(raw: Mapping[str, Any], *, calendar_id: str,
         mode.value if private else sanitize_text(raw.get("location", ""), config.location_max_length),
         start, end, all_day, _enum(EventStatus, raw.get("status", "confirmed"), EventStatus.CONFIRMED),
         visibility, Transparency.FREE if raw.get("transparency") == "transparent" else Transparency.BUSY,
-        organizer, len(attendees), response, str(recurrence) if recurrence else None, metadata, mode)
+        organizer, len(attendees), response, str(recurrence) if recurrence else None,
+        tuple(sorted(metadata.items())), mode)
 
 
 class GoogleTransport(Protocol):
@@ -144,7 +145,10 @@ class GoogleCalendarProvider:
     def list_events(self, *, window_start: datetime,
                     window_end: datetime) -> CalendarProviderResult:
         fetched = self.clock()
-        if any(value.tzinfo is None for value in (window_start, window_end)) or window_end <= window_start:
+        if fetched.tzinfo is None or fetched.utcoffset() is None:
+            return CalendarInvalid(fetched, "calendar fetch timestamp is invalid")
+        if any(value.tzinfo is None or value.utcoffset() is None
+               for value in (window_start, window_end)) or window_end <= window_start:
             return CalendarInvalid(fetched, "calendar query window is invalid")
         events: list[CalendarEvent] = []
         invalid = 0
@@ -172,11 +176,16 @@ class GoogleCalendarProvider:
                     if not token:
                         break
         except Exception as error:
-            status = getattr(error, "status_code", getattr(error, "status", None))
+            response = getattr(error, "resp", None)
+            status = getattr(error, "status_code", getattr(error, "status",
+                getattr(response, "status", None)))
+            details = getattr(error, "error_details", ())
+            rate_reason = any(isinstance(item, Mapping) and item.get("reason") in
+                ("rateLimitExceeded", "userRateLimitExceeded") for item in details)
+            if status == 429 or rate_reason:
+                return CalendarRateLimited(fetched)
             if status in (401, 403):
                 return CalendarUnauthorized(fetched)
-            if status == 429:
-                return CalendarRateLimited(fetched)
             if isinstance(error, (TimeoutError, ConnectionError)):
                 return CalendarUnavailable(fetched)
             return CalendarProviderError(fetched)

@@ -11,8 +11,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from location_core.calendar_context import CalendarContextEngine
-from location_core.calendar_contracts import CalendarUnavailable
-from location_core.calendar_providers import ReplayCalendarProvider
+from location_core.calendar_factory import (
+    build_calendar_provider,
+    context_config_from_env,
+)
 from location_core.context import ContextConfig, CurrentContextEngine
 from location_core.context_inputs import ContextInputLoader
 from location_core.context_state import SCHEMA_VERSION, ContextStateRepository
@@ -53,11 +55,10 @@ def compute_context(config: ContextConfig, *, now: datetime,
         lookback = int(os.environ.get("HERMES_CALENDAR_LOOKBACK_MINUTES", "120"))
         lookahead = int(os.environ.get("HERMES_CALENDAR_LOOKAHEAD_HOURS", "24"))
         start, end = now - timedelta(minutes=lookback), now + timedelta(hours=lookahead)
-        provider_name = os.environ.get("HERMES_CALENDAR_PROVIDER", "")
-        provider_result = (ReplayCalendarProvider((), fetched_at=now).list_events(
-            window_start=start, window_end=end) if provider_name == "replay" else
-            CalendarUnavailable(now, "configured calendar provider is unavailable"))
-        calendar_context = CalendarContextEngine().compute(provider_result=provider_result,
+        provider = build_calendar_provider(env=os.environ, clock=lambda: now)
+        provider_result = provider.list_events(window_start=start, window_end=end)
+        calendar_context = CalendarContextEngine(context_config_from_env(os.environ)).compute(
+            provider_result=provider_result,
             computed_at=now, window_start=start, window_end=end)
     result = engine.compute(observation=bundle.observation,
         movement_state=bundle.movement_state, place_state=bundle.place_state,

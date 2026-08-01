@@ -585,7 +585,9 @@ class CurrentContextEngine:
             if matched:
                 confidence = matched.confidence * (.35 if matched.status is FactStatus.STALE else 1)
                 trait(trait_type, True, confidence, (_id("ev", "fact", matched.fact_id),))
-        if calendar_context is not None:
+        if (calendar_context is not None and
+                calendar_context.status.value in ("available", "partial") and
+                calendar_context.freshness.value in ("fresh", "aging")):
             calendar_evidence = tuple(item.evidence_id for item in calendar_context.evidence)
             for kind in calendar_context.traits:
                 trait(kind, True, calendar_context.confidence, calendar_evidence)
