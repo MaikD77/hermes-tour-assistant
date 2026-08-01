@@ -368,3 +368,17 @@ werden ausschließlich aus koordinatenfreier Evidenz innerhalb des Fensters neu
 gebildet. `profile forget-place` vergisst nur im Profil; ein Rebuild kann aus
 dem unveränderten Place-State neu lernen. Dauerhaftes schichtübergreifendes
 Vergessen erfordert zuerst `place forget`.
+
+## Current Context (Sprint 5)
+
+`location-session-core` komponiert kanonische Location-, Movement-, Place-/Stay-
+und Mobility-Profile-Zustände zu einem unveränderlichen, deterministischen
+`CurrentContext`. Der Snapshot beantwortet ausschließlich, was aktuell belastbar
+bekannt ist. Er enthält Teilkontexte, Freshness, gewichtete Confidence,
+strukturierte Evidence, sichtbare Unsicherheiten und nicht-semantische Traits.
+Er ruft keine Provider auf, sendet nichts und entscheidet nicht über Aktionen.
+
+Das Standardmodell, `context export`, `context explain` und die optionale
+Last-Snapshot-Persistenz enthalten weder Koordinaten, Rohpayloads, Adressen,
+Tracks noch semantische Place-Namen. Details und Rollout stehen in
+[`docs/architecture/current-context.md`](docs/architecture/current-context.md).

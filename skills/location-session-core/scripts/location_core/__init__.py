@@ -1,5 +1,17 @@
 """Shared runtime primitives for Hermes location-aware skills."""
 
+from .context import (
+    ContextConfig,
+    ContextEvidence,
+    ContextResult,
+    ContextStatus,
+    ContextTrait,
+    ContextUncertainty,
+    CurrentContext,
+    CurrentContextEngine,
+    Freshness,
+    FreshnessThresholds,
+)
 from .contracts import (
     AlertDecision,
     GateDecision,
@@ -60,6 +72,16 @@ StateRepository = JsonStateRepository
 __all__ = [
     "AlertDecision",
     "CorruptStateError",
+    "ContextConfig",
+    "ContextEvidence",
+    "ContextResult",
+    "ContextStatus",
+    "ContextTrait",
+    "ContextUncertainty",
+    "CurrentContext",
+    "CurrentContextEngine",
+    "Freshness",
+    "FreshnessThresholds",
     "GateDecision",
     "JsonStateRepository",
     "LocationSample",
