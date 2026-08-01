@@ -308,3 +308,31 @@ Aktive Segmente verwenden einen konstant großen privaten Akkumulator für Start
 Die Geschwindigkeitsbereiche sind disjunkt: `stationary <= 0,7 m/s`, `walking <= 2,6 m/s`, `cycling < 10,0 m/s` und `automotive >= 10,0 m/s`. Deshalb müssen `HERMES_MOVEMENT_CYCLING_MAX_MPS` und `HERMES_MOVEMENT_AUTOMOTIVE_MIN_MPS` denselben Übergangswert besitzen. Stationär wird erst nach der vollständigen `stationary_min_seconds`-Dauer innerhalb des Radius bestätigt.
 
 Für einen quellenübergreifenden Stream muss beim Erzeugen sowohl des OwnTracks- als auch des Telegram-Adapters derselbe explizite `canonical_device_id` (z. B. aus `HERMES_LOCATION_CANONICAL_DEVICE_ID=maik-iphone`) übergeben werden. Event- beziehungsweise Message-IDs verbleiben in `source_metadata`; ohne explizite Zuordnung werden Geräte nicht implizit vermischt.
+
+## Private Place & Stay Engine
+
+Sprint 3 ergänzt `LocationObservation → MovementState → PlaceEngine`. Ein
+**Stay** ist ein zusammenhängender Aufenthalt, ein **Place** dessen
+wiedererkennbarer privater Raumcluster und ein **Visit** die trackfreie
+Zuordnung eines abgeschlossenen Stay. Place ist kein POI, keine Adresse, kein
+Gebäude und keine semantische Kategorie; Tour-/City-POI-Modelle bleiben getrennt.
+
+Ankunft ist rückwirkend der Beginn eines später bestätigten Stay (`observed_at`),
+`confirmed_at` der Evidenzzeitpunkt. Abfahrt ist erst nach zwei Minuten
+außerhalb des 80-m-Radius bestätigt. 50-m-Ankunftsradius, Qualitätsfilter und
+Hysterese tolerieren kurze Ausgänge und GPS-Sprünge. Lange Lücken bedeuten
+Unsicherheit, nie automatisch Abfahrt.
+
+Bei Departure ist der erste belastbare Außenpunkt nur
+`departure_observed_at`. Erst nach erfüllter Hysterese entsteht
+`departure_confirmed_at`; `departed_at` und die Visit-Dauer werden dann
+fachlich auf den ersten Außenpunkt zurückdatiert. Stay-Qualität wird aus
+begrenzten GOOD-/LIMITED-/POOR-Zählern aggregiert, nicht aus Enum-Strings.
+
+Places werden erst nach wiederholten Visits, Mindestdauer und Qualität
+bestätigt. Die aus dem ersten Stay abgeleitete ID bleibt bei Centroid-Verschiebung
+stabil. Persistierte Centroids werden auf vier Nachkommastellen minimiert; CLI,
+Diagnose und Events zeigen keine Koordinaten. `placectl.py
+status|list|visits|diagnose|replay|forget|reset` betrifft nur Place-State. Sprint
+3 bleibt ohne Benachrichtigungen im Shadow Mode. Details: [ADR
+0003](docs/adr/0003-repeated-stays-form-deterministic-private-places.md).
