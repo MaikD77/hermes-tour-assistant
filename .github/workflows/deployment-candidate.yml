@@ -1,0 +1,65 @@
+# deployment-candidate.yml — Deployment-Candidate-Hinweis (R6)
+# ----------------------------------------------------------------------
+# Wiederverwendbares Template. Laeuft NUR bei gemergtem PR. Sendet einen
+# redigierten Hinweis (Variante B: Telegram -> Hermes laedt GitHub neu).
+# Deployed NICHT, veraendert NICHTS im Repository, loest KEINEN produktiven
+# Trigger aus, widerspricht keiner Allowlist.
+#
+# Secrets (nur als GitHub Repository Secrets, niemals im Commit):
+#   TELEGRAM_BOT_TOKEN  - optional; ohne Token wird der Schritt uebersprungen
+#   TELEGRAM_CHAT_ID    - Maiks Telegram-Chat-ID
+#
+# Fehlgeschlagene Zustellung ist ein WARN, kein Deploy-Ausloeser.
+
+name: deployment-candidate
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  notify-candidate:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Build redigiertes Candidate-Event
+        id: ev
+        run: |
+          HEAD_SHA="${{ github.event.pull_request.merge_commit_sha }}"
+          PR_NUM="${{ github.event.pull_request.number }}"
+          TITLE="${{ github.event.pull_request.title }}"
+          BASE="${{ github.event.pull_request.base.ref }}"
+          HEAD_REF="${{ github.event.pull_request.head.ref }}"
+          MERGED_AT="${{ github.event.pull_request.merged_at }}"
+          ACTOR="${{ github.event.sender.login }}"
+          RUN_ID="${{ github.run_id }}"
+          EVENT_ID="${GITHUB_REPOSITORY}:pr${PR_NUM}:${HEAD_SHA}"
+          echo "rep=${GITHUB_REPOSITORY}" >> "$GITHUB_OUTPUT"
+          echo "event_id=${EVENT_ID}" >> "$GITHUB_OUTPUT"
+          echo "head_sha=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
+          echo "pr=${PR_NUM}" >> "$GITHUB_OUTPUT"
+          echo "title=${TITLE}" >> "$GITHUB_OUTPUT"
+          echo "base=${BASE}" >> "$GITHUB_OUTPUT"
+          echo "head=${HEAD_REF}" >> "$GITHUB_OUTPUT"
+          echo "merged_at=${MERGED_AT}" >> "$GITHUB_OUTPUT"
+          echo "actor=${ACTOR}" >> "$GITHUB_OUTPUT"
+          echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Send redigierter Hinweis an Telegram (Variante B)
+        if: ${{ env.BOT != '' && env.CHAT != '' }}
+        env:
+          BOT: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          MSG="Redeploy-Candidate: ${GITHUB_REPOSITORY} PR #${{ steps.ev.outputs.pr }} Commit ${{ steps.ev.outputs.head_sha }}"
+          curl -sf --max-time 30 --retry 2 --retry-delay 2 \
+            "https://api.telegram.org/bot${BOT}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT}" \
+            --data-urlencode "text=${MSG}" \
+            --data-urlencode "disable_web_page_preview=true" \
+            -o /dev/null || echo "WARN: Hinweis nicht gesendet (kein Deploy-Ausloeser)"
